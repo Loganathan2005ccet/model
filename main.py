@@ -9,12 +9,19 @@ import seaborn as sns
 from io import StringIO, BytesIO
 import chardet
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Conv1D, GlobalMaxPooling1D, LSTM, GRU, Bidirectional, BatchNormalization
-from tensorflow.keras.optimizers import Adam, RMSprop, SGD
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import (Dense, Dropout, Conv1D, GlobalMaxPooling1D, 
+                                   LSTM, GRU, Bidirectional, BatchNormalization,
+                                   Input, MultiHeadAttention, LayerNormalization,
+                                   GlobalAveragePooling1D, Add, Flatten, Activation)
+from tensorflow.keras.optimizers import Adam, RMSprop, SGD, Nadam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.regularizers import l1_l2
+from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, RandomizedSearchCV
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, GradientBoostingRegressor
+from sklearn.ensemble import (RandomForestClassifier, RandomForestRegressor, 
+                            GradientBoostingClassifier, GradientBoostingRegressor,
+                            VotingClassifier, VotingRegressor, StackingClassifier, StackingRegressor)
 from sklearn.ensemble import AdaBoostClassifier, AdaBoostRegressor, ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge, Lasso, ElasticNet
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -25,11 +32,16 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticD
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
 from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, 
-                           mean_squared_error, mean_absolute_error, r2_score, classification_report, confusion_matrix)
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, LabelEncoder, OneHotEncoder
-from sklearn.feature_selection import SelectKBest, f_classif, f_regression, mutual_info_classif, mutual_info_regression
-from sklearn.decomposition import PCA, TruncatedSVD, FastICA
+                           mean_squared_error, mean_absolute_error, r2_score, classification_report, 
+                           confusion_matrix, precision_recall_curve, roc_curve, mean_absolute_percentage_error)
+from sklearn.preprocessing import (StandardScaler, MinMaxScaler, RobustScaler, LabelEncoder, 
+                                 OneHotEncoder, PowerTransformer, QuantileTransformer)
+from sklearn.feature_selection import (SelectKBest, f_classif, f_regression, mutual_info_classif, 
+                                     mutual_info_regression, RFE, RFECV, SelectFromModel)
+from sklearn.decomposition import PCA, TruncatedSVD, FastICA, NMF
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from sklearn.inspection import permutation_importance, PartialDependenceDisplay
+from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 import xgboost as xgb
 from xgboost import XGBClassifier, XGBRegressor
 import catboost as cb
@@ -37,26 +49,33 @@ from catboost import CatBoostClassifier, CatBoostRegressor
 import lightgbm as lgb
 from lightgbm import LGBMClassifier, LGBMRegressor
 from scipy import stats
-from scipy.stats import normaltest, shapiro, jarque_bera, anderson
+from scipy.stats import normaltest, shapiro, jarque_bera, anderson, pearsonr, spearmanr
 import time
 import pickle
 import json
 import warnings
+import joblib
+from datetime import datetime
+import os
+import sys
+from pathlib import Path
+import base64
+
 warnings.filterwarnings('ignore')
 
-# 🔧 FIX: Environment settings to prevent multiprocessing issues
-import os
+# 🔧 Environment settings to prevent multiprocessing issues
 os.environ['LOKY_MAX_CPU_COUNT'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Set page configuration
 st.set_page_config(
-    page_title="Advanced AutoML & Visualization Dashboard",
-    page_icon="🚀",
+    page_title="Expert AutoML & Deep Learning Platform",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -131,8 +150,1772 @@ st.markdown("""
         overflow: hidden;
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
+    .model-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin: 0.5rem 0;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .info-box {
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        margin: 1rem 0;
+        border-left: 5px solid #4ECDC4;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+class ExpertMLPipeline:
+    """Expert-level Machine Learning Pipeline with Advanced Features"""
+    
+    def __init__(self):
+        self.models = {}
+        self.results = {}
+        self.scalers = {}
+        self.encoders = {}
+        self.feature_importance = {}
+        self.hyperparameters = {}
+        
+    def get_all_models(self, task_type='classification'):
+        """Get all available models for the given task type"""
+        if task_type == 'classification':
+            return {
+                'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1),
+                'XGBoost': XGBClassifier(random_state=42, n_jobs=1, eval_metric='logloss'),
+                'LightGBM': LGBMClassifier(random_state=42, verbose=-1, n_jobs=1),
+                'Logistic Regression': LogisticRegression(random_state=42, n_jobs=1, max_iter=1000),
+                'SVM': SVC(probability=True, random_state=42),
+                'Decision Tree': DecisionTreeClassifier(random_state=42),
+                'K-Nearest Neighbors': KNeighborsClassifier(n_jobs=1),
+                'Gradient Boosting': GradientBoostingClassifier(random_state=42),
+                'AdaBoost': AdaBoostClassifier(random_state=42),
+                'Gaussian Naive Bayes': GaussianNB(),
+                'MLP Classifier': MLPClassifier(random_state=42, max_iter=1000)
+            }
+        else:
+            return {
+                'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=1),
+                'XGBoost': XGBRegressor(random_state=42, n_jobs=1),
+                'LightGBM': LGBMRegressor(random_state=42, verbose=-1, n_jobs=1),
+                'Linear Regression': LinearRegression(n_jobs=1),
+                'Ridge Regression': Ridge(random_state=42),
+                'Lasso Regression': Lasso(random_state=42),
+                'SVR': SVR(),
+                'Decision Tree': DecisionTreeRegressor(random_state=42),
+                'K-Nearest Neighbors': KNeighborsRegressor(n_jobs=1),
+                'Gradient Boosting': GradientBoostingRegressor(random_state=42),
+                'AdaBoost': AdaBoostRegressor(random_state=42),
+                'MLP Regressor': MLPRegressor(random_state=42, max_iter=1000)
+            }
+    
+    def get_best_models_auto(self, evaluation_results, task_type='classification', top_k=3):
+        """Automatically select best models based on evaluation results"""
+        if not evaluation_results:
+            return self.get_default_best_models(task_type)
+        
+        if task_type == 'classification':
+            # Sort by accuracy and select top k models
+            sorted_models = sorted(evaluation_results.items(), 
+                                 key=lambda x: x[1].get('accuracy', 0), 
+                                 reverse=True)
+        else:
+            # Sort by R² score and select top k models
+            sorted_models = sorted(evaluation_results.items(), 
+                                 key=lambda x: x[1].get('r2_score', -float('inf')), 
+                                 reverse=True)
+        
+        best_models = {name: evaluation_results[name]['model'] for name, _ in sorted_models[:top_k]}
+        return best_models
+    
+    def get_default_best_models(self, task_type='classification'):
+        """Get default best models if no evaluation results available"""
+        if task_type == 'classification':
+            return {
+                'XGBoost': XGBClassifier(random_state=42, n_jobs=1, eval_metric='logloss'),
+                'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1),
+                'LightGBM': LGBMClassifier(random_state=42, verbose=-1, n_jobs=1)
+            }
+        else:
+            return {
+                'XGBoost': XGBRegressor(random_state=42, n_jobs=1),
+                'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=1),
+                'LightGBM': LGBMRegressor(random_state=42, verbose=-1, n_jobs=1)
+            }
+
+class AdvancedDeepLearningModels:
+    """Advanced Deep Learning Models with Modern Architectures"""
+    
+    def __init__(self):
+        self.models = {}
+    
+    def get_all_dl_models(self, input_shape, task_type='classification'):
+        """Get all available deep learning models"""
+        output_activation = 'sigmoid' if task_type == 'classification' else 'linear'
+        
+        return {
+            'Simple Neural Network': self.create_simple_nn(input_shape, output_activation=output_activation),
+            'Residual MLP': self.create_residual_mlp(input_shape, output_activation=output_activation),
+            'Transformer Model': self.create_tabular_transformer(input_shape, output_activation=output_activation),
+            'Hybrid CNN-LSTM': self.create_hybrid_cnn_lstm(input_shape, output_activation=output_activation)
+        }
+    
+    def get_best_dl_models_auto(self, evaluation_results, task_type='classification', top_k=2):
+        """Automatically select best DL models based on evaluation results"""
+        if not evaluation_results:
+            return self.get_default_best_dl_models(task_type)
+        
+        if task_type == 'classification':
+            # Sort by accuracy and select top k models
+            sorted_models = sorted(evaluation_results.items(), 
+                                 key=lambda x: x[1].get('accuracy', 0), 
+                                 reverse=True)
+        else:
+            # Sort by R² score and select top k models
+            sorted_models = sorted(evaluation_results.items(), 
+                                 key=lambda x: x[1].get('r2_score', -float('inf')), 
+                                 reverse=True)
+        
+        best_models = {name: evaluation_results[name]['model'] for name, _ in sorted_models[:top_k]}
+        return best_models
+    
+    def get_default_best_dl_models(self, task_type='classification'):
+        """Get default best DL models"""
+        return {
+            'Simple Neural Network': None,
+            'Residual MLP': None
+        }
+    
+    def create_simple_nn(self, input_shape, output_activation='sigmoid'):
+        """Create a simple neural network"""
+        model = Sequential([
+            Dense(128, activation='relu', input_shape=input_shape),
+            Dropout(0.3),
+            Dense(64, activation='relu'),
+            Dropout(0.3),
+            Dense(32, activation='relu'),
+            Dense(1 if output_activation in ['sigmoid', 'linear'] else 2, activation=output_activation)
+        ])
+        
+        if output_activation == 'sigmoid':
+            loss = 'binary_crossentropy'
+            metrics = ['accuracy']
+        elif output_activation == 'softmax':
+            loss = 'categorical_crossentropy'
+            metrics = ['accuracy']
+        else:
+            loss = 'mse'
+            metrics = ['mae']
+            
+        model.compile(optimizer=Adam(learning_rate=0.001), loss=loss, metrics=metrics)
+        return model
+
+    def create_transformer_block(self, input_tensor, head_size, num_heads, ff_dim, dropout=0):
+        """Create a transformer block for tabular data"""
+        # Multi-head attention
+        attention_output = MultiHeadAttention(
+            key_dim=head_size, num_heads=num_heads, dropout=dropout
+        )(input_tensor, input_tensor)
+        
+        # Add & Norm
+        x = Add()([input_tensor, attention_output])
+        x = LayerNormalization()(x)
+        
+        # Feed Forward
+        ff_output = Dense(ff_dim, activation="relu")(x)
+        ff_output = Dense(input_tensor.shape[-1])(ff_output)
+        
+        # Add & Norm
+        x = Add()([x, ff_output])
+        x = LayerNormalization()(x)
+        
+        return x
+    
+    def create_tabular_transformer(self, input_shape, num_transformer_blocks=2, 
+                                 head_size=256, num_heads=4, ff_dim=512, 
+                                 mlp_units=[128, 64], dropout=0.1, output_activation='sigmoid'):
+        """Create a transformer model for tabular data"""
+        
+        inputs = Input(shape=input_shape)
+        
+        # Initial projection
+        x = Dense(head_size)(inputs)
+        x = tf.keras.layers.Reshape((1, head_size))(x)  # Add sequence dimension
+        
+        # Transformer blocks
+        for _ in range(num_transformer_blocks):
+            x = self.create_transformer_block(x, head_size, num_heads, ff_dim, dropout)
+        
+        # Global average pooling
+        x = GlobalAveragePooling1D()(x)
+        
+        # MLP head
+        for dim in mlp_units:
+            x = Dense(dim, activation="relu")(x)
+            x = Dropout(dropout)(x)
+        
+        # Output layer
+        if output_activation == 'sigmoid':
+            outputs = Dense(1, activation="sigmoid")(x)
+            loss = 'binary_crossentropy'
+        elif output_activation == 'softmax':
+            outputs = Dense(2, activation="softmax")(x)  # Assuming binary classification
+            loss = 'categorical_crossentropy'
+        else:
+            outputs = Dense(1)(x)
+            loss = 'mse'
+        
+        model = Model(inputs, outputs)
+        model.compile(
+            optimizer=Adam(learning_rate=1e-4),
+            loss=loss,
+            metrics=['accuracy'] if output_activation in ['sigmoid', 'softmax'] else ['mae']
+        )
+        
+        return model
+    
+    def create_residual_mlp(self, input_shape, hidden_units=[512, 256, 128, 64], 
+                          dropout_rate=0.3, output_activation='sigmoid'):
+        """Create MLP with residual connections"""
+        
+        inputs = Input(shape=input_shape)
+        x = Dense(hidden_units[0], activation='relu')(inputs)
+        x = BatchNormalization()(x)
+        x = Dropout(dropout_rate)(x)
+        
+        # Residual blocks
+        for units in hidden_units[1:]:
+            # Residual connection
+            residual = x
+            
+            # Main path
+            x = Dense(units, activation='relu')(x)
+            x = BatchNormalization()(x)
+            x = Dropout(dropout_rate)(x)
+            
+            x = Dense(units, activation='relu')(x)
+            x = BatchNormalization()(x)
+            
+            # Adjust residual if dimensions don't match
+            if residual.shape[-1] != units:
+                residual = Dense(units)(residual)
+            
+            # Add residual
+            x = Add()([x, residual])
+            x = Activation('relu')(x)
+            x = Dropout(dropout_rate)(x)
+        
+        # Output layer
+        if output_activation == 'sigmoid':
+            outputs = Dense(1, activation="sigmoid")(x)
+            loss = 'binary_crossentropy'
+        elif output_activation == 'softmax':
+            outputs = Dense(2, activation="softmax")(x)
+            loss = 'categorical_crossentropy'
+        else:
+            outputs = Dense(1)(x)
+            loss = 'mse'
+        
+        model = Model(inputs, outputs)
+        model.compile(
+            optimizer=Adam(learning_rate=1e-3),
+            loss=loss,
+            metrics=['accuracy'] if output_activation in ['sigmoid', 'softmax'] else ['mae']
+        )
+        
+        return model
+    
+    def create_hybrid_cnn_lstm(self, input_shape, cnn_filters=[64, 128], 
+                             lstm_units=[64, 32], dense_units=[64], 
+                             output_activation='sigmoid'):
+        """Create hybrid CNN-LSTM model for tabular data"""
+        
+        inputs = Input(shape=input_shape)
+        
+        # Reshape for CNN (add channel dimension)
+        x = tf.keras.layers.Reshape((input_shape[0], 1))(inputs)
+        
+        # CNN layers
+        for filters in cnn_filters:
+            x = Conv1D(filters=filters, kernel_size=3, activation='relu', padding='same')(x)
+            x = BatchNormalization()(x)
+            x = Dropout(0.2)(x)
+        
+        # LSTM layers
+        for i, units in enumerate(lstm_units):
+            return_sequences = i < len(lstm_units) - 1
+            x = LSTM(units, return_sequences=return_sequences, dropout=0.2)(x)
+        
+        # Dense layers
+        for units in dense_units:
+            x = Dense(units, activation='relu')(x)
+            x = Dropout(0.3)(x)
+        
+        # Output layer
+        if output_activation == 'sigmoid':
+            outputs = Dense(1, activation="sigmoid")(x)
+            loss = 'binary_crossentropy'
+        elif output_activation == 'softmax':
+            outputs = Dense(2, activation="softmax")(x)
+            loss = 'categorical_crossentropy'
+        else:
+            outputs = Dense(1)(x)
+            loss = 'mse'
+        
+        model = Model(inputs, outputs)
+        model.compile(
+            optimizer=Adam(learning_rate=1e-3),
+            loss=loss,
+            metrics=['accuracy'] if output_activation in ['sigmoid', 'softmax'] else ['mae']
+        )
+        
+        return model
+
+class ExpertModelTrainer:
+    """Expert-level model training with advanced techniques"""
+    
+    def __init__(self):
+        self.ml_pipeline = ExpertMLPipeline()
+        self.dl_models = AdvancedDeepLearningModels()
+        self.training_history = {}
+    
+    def create_advanced_callbacks(self):
+        """Create advanced training callbacks"""
+        return [
+            EarlyStopping(
+                monitor='val_loss',
+                patience=15,
+                restore_best_weights=True,
+                mode='min',
+                verbose=1
+            ),
+            ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=10,
+                min_lr=1e-7,
+                verbose=1
+            )
+        ]
+    
+    def quick_evaluate_models(self, X_train, y_train, X_test, y_test, task_type='classification'):
+        """Quickly evaluate all models to select the best ones"""
+        st.subheader("🔍 Quick Model Evaluation")
+        st.info("Evaluating all models to select the best performers...")
+        
+        ml_pipeline = ExpertMLPipeline()
+        all_ml_models = ml_pipeline.get_all_models(task_type)
+        
+        evaluation_results = {}
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Use a smaller subset for quick evaluation
+        if len(X_train) > 1000:
+            X_eval = X_train[:1000]
+            y_eval = y_train[:1000]
+            X_test_eval = X_test[:500]
+            y_test_eval = y_test[:500]
+        else:
+            X_eval = X_train
+            y_eval = y_train
+            X_test_eval = X_test
+            y_test_eval = y_test
+        
+        for idx, (model_name, model) in enumerate(all_ml_models.items()):
+            status_text.text(f'⚡ Quick evaluating {model_name}...')
+            progress_bar.progress((idx + 1) / len(all_ml_models))
+            
+            try:
+                start_time = time.time()
+                
+                # Train model
+                model.fit(X_eval, y_eval)
+                
+                # Make predictions
+                if task_type == 'classification':
+                    y_pred = model.predict(X_test_eval)
+                    y_pred_proba = model.predict_proba(X_test_eval)[:, 1] if hasattr(model, 'predict_proba') else None
+                    
+                    # Calculate metrics
+                    accuracy = accuracy_score(y_test_eval, y_pred)
+                    precision = precision_score(y_test_eval, y_pred, average='weighted', zero_division=0)
+                    recall = recall_score(y_test_eval, y_pred, average='weighted', zero_division=0)
+                    f1 = f1_score(y_test_eval, y_pred, average='weighted', zero_division=0)
+                    roc_auc = roc_auc_score(y_test_eval, y_pred_proba) if y_pred_proba is not None else None
+                    
+                    evaluation_results[model_name] = {
+                        'model': model,
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1,
+                        'roc_auc': roc_auc,
+                        'evaluation_time': time.time() - start_time
+                    }
+                    
+                else:
+                    y_pred = model.predict(X_test_eval)
+                    
+                    # Calculate metrics
+                    mse = mean_squared_error(y_test_eval, y_pred)
+                    rmse = np.sqrt(mse)
+                    mae = mean_absolute_error(y_test_eval, y_pred)
+                    r2 = r2_score(y_test_eval, y_pred)
+                    
+                    evaluation_results[model_name] = {
+                        'model': model,
+                        'mse': mse,
+                        'rmse': rmse,
+                        'mae': mae,
+                        'r2_score': r2,
+                        'evaluation_time': time.time() - start_time
+                    }
+                
+            except Exception as e:
+                st.warning(f"⚠️ Error evaluating {model_name}: {str(e)}")
+                continue
+        
+        # Clear progress indicators
+        progress_bar.empty()
+        status_text.empty()
+        
+        return evaluation_results
+    
+    def quick_evaluate_dl_models(self, X_train, y_train, X_val, y_val, X_test, y_test, 
+                               task_type='classification', epochs=20):
+        """Quickly evaluate DL models to select the best ones"""
+        st.subheader("🔍 Quick DL Model Evaluation")
+        
+        # Prepare data for DL
+        if task_type == 'classification':
+            if len(np.unique(y_train)) == 2:
+                output_activation = 'sigmoid'
+                y_train_dl = y_train
+                y_val_dl = y_val
+                y_test_dl = y_test
+            else:
+                output_activation = 'softmax'
+                y_train_dl = to_categorical(y_train)
+                y_val_dl = to_categorical(y_val)
+                y_test_dl = to_categorical(y_test)
+        else:
+            output_activation = 'linear'
+            y_train_dl = y_train
+            y_val_dl = y_val
+            y_test_dl = y_test
+        
+        input_shape = (X_train.shape[1],)
+        all_dl_models = self.dl_models.get_all_dl_models(input_shape, task_type)
+        
+        evaluation_results = {}
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Use smaller subset for quick evaluation
+        if len(X_train) > 1000:
+            X_train_eval = X_train[:1000]
+            y_train_dl_eval = y_train_dl[:1000] if not isinstance(y_train_dl, (pd.Series, np.ndarray)) else y_train_dl[:1000]
+            X_val_eval = X_val[:200]
+            y_val_dl_eval = y_val_dl[:200] if not isinstance(y_val_dl, (pd.Series, np.ndarray)) else y_val_dl[:200]
+            X_test_eval = X_test[:200]
+            y_test_eval = y_test[:200]
+        else:
+            X_train_eval = X_train
+            y_train_dl_eval = y_train_dl
+            X_val_eval = X_val
+            y_val_dl_eval = y_val_dl
+            X_test_eval = X_test
+            y_test_eval = y_test
+        
+        for idx, (model_name, model) in enumerate(all_dl_models.items()):
+            status_text.text(f'⚡ Quick evaluating {model_name}...')
+            progress_bar.progress((idx + 1) / len(all_dl_models))
+            
+            try:
+                start_time = time.time()
+                
+                # Train model with fewer epochs for quick evaluation
+                history = model.fit(
+                    X_train_eval, y_train_dl_eval,
+                    epochs=epochs,
+                    batch_size=32,
+                    validation_data=(X_val_eval, y_val_dl_eval),
+                    verbose=0
+                )
+                
+                # Make predictions
+                if task_type == 'classification':
+                    y_pred_proba = model.predict(X_test_eval)
+                    
+                    if output_activation == 'sigmoid':
+                        y_pred = (y_pred_proba > 0.5).astype(int).ravel()
+                        roc_auc = roc_auc_score(y_test_eval, y_pred_proba)
+                    else:
+                        y_pred = np.argmax(y_pred_proba, axis=1)
+                        roc_auc = roc_auc_score(y_test_dl, y_pred_proba, multi_class='ovr')
+                    
+                    # Calculate metrics
+                    accuracy = accuracy_score(y_test_eval, y_pred)
+                    precision = precision_score(y_test_eval, y_pred, average='weighted', zero_division=0)
+                    recall = recall_score(y_test_eval, y_pred, average='weighted', zero_division=0)
+                    f1 = f1_score(y_test_eval, y_pred, average='weighted', zero_division=0)
+                    
+                    evaluation_results[model_name] = {
+                        'model': model,
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1,
+                        'roc_auc': roc_auc,
+                        'evaluation_time': time.time() - start_time,
+                        'history': history.history
+                    }
+                    
+                else:
+                    y_pred = model.predict(X_test_eval).ravel()
+                    
+                    # Calculate metrics
+                    mse = mean_squared_error(y_test_eval, y_pred)
+                    rmse = np.sqrt(mse)
+                    mae = mean_absolute_error(y_test_eval, y_pred)
+                    r2 = r2_score(y_test_eval, y_pred)
+                    
+                    evaluation_results[model_name] = {
+                        'model': model,
+                        'mse': mse,
+                        'rmse': rmse,
+                        'mae': mae,
+                        'r2_score': r2,
+                        'evaluation_time': time.time() - start_time,
+                        'history': history.history
+                    }
+                
+            except Exception as e:
+                st.warning(f"⚠️ Error evaluating {model_name}: {str(e)}")
+                continue
+        
+        # Clear progress indicators
+        progress_bar.empty()
+        status_text.empty()
+        
+        return evaluation_results
+    
+    def train_selected_ml_models(self, X_train, y_train, X_test, y_test, 
+                               selected_models, task_type='classification'):
+        """Train selected ML models with full training"""
+        
+        st.subheader("🤖 Training Selected ML Models")
+        
+        all_models = self.ml_pipeline.get_all_models(task_type)
+        models_to_train = {name: all_models[name] for name in selected_models if name in all_models}
+        
+        if not models_to_train:
+            st.error("❌ No valid models selected!")
+            return {}
+        
+        results = {}
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for idx, (model_name, model) in enumerate(models_to_train.items()):
+            status_text.text(f'🔄 Training {model_name}...')
+            progress_bar.progress((idx + 1) / len(models_to_train))
+            
+            try:
+                start_time = time.time()
+                
+                # Train model with full data
+                model.fit(X_train, y_train)
+                
+                # Make predictions
+                if task_type == 'classification':
+                    y_pred = model.predict(X_test)
+                    y_pred_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
+                    
+                    # Calculate metrics
+                    accuracy = accuracy_score(y_test, y_pred)
+                    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+                    recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+                    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+                    roc_auc = roc_auc_score(y_test, y_pred_proba) if y_pred_proba is not None else None
+                    
+                    results[model_name] = {
+                        'model': model,
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1,
+                        'roc_auc': roc_auc,
+                        'training_time': time.time() - start_time
+                    }
+                    
+                else:
+                    y_pred = model.predict(X_test)
+                    
+                    # Calculate metrics
+                    mse = mean_squared_error(y_test, y_pred)
+                    rmse = np.sqrt(mse)
+                    mae = mean_absolute_error(y_test, y_pred)
+                    r2 = r2_score(y_test, y_pred)
+                    mape = mean_absolute_percentage_error(y_test, y_pred)
+                    
+                    results[model_name] = {
+                        'model': model,
+                        'mse': mse,
+                        'rmse': rmse,
+                        'mae': mae,
+                        'r2_score': r2,
+                        'mape': mape,
+                        'training_time': time.time() - start_time
+                    }
+                
+                st.success(f"✅ {model_name} trained successfully!")
+                
+            except Exception as e:
+                st.warning(f"⚠️ Error training {model_name}: {str(e)}")
+                continue
+        
+        # Clear progress indicators
+        progress_bar.empty()
+        status_text.empty()
+        
+        return results
+    
+    def train_selected_dl_models(self, X_train, y_train, X_val, y_val, X_test, y_test, 
+                               selected_models, task_type='classification', epochs=100):
+        """Train selected deep learning models with full training"""
+        
+        st.subheader("🧠 Training Selected Deep Learning Models")
+        
+        # Prepare data for DL
+        if task_type == 'classification':
+            if len(np.unique(y_train)) == 2:
+                output_activation = 'sigmoid'
+                loss = 'binary_crossentropy'
+                y_train_dl = y_train
+                y_val_dl = y_val
+                y_test_dl = y_test
+            else:
+                output_activation = 'softmax'
+                loss = 'categorical_crossentropy'
+                y_train_dl = to_categorical(y_train)
+                y_val_dl = to_categorical(y_val)
+                y_test_dl = to_categorical(y_test)
+        else:
+            output_activation = 'linear'
+            loss = 'mse'
+            y_train_dl = y_train
+            y_val_dl = y_val
+            y_test_dl = y_test
+        
+        input_shape = (X_train.shape[1],)
+        all_models = self.dl_models.get_all_dl_models(input_shape, task_type)
+        models_to_train = {name: all_models[name] for name in selected_models if name in all_models}
+        
+        if not models_to_train:
+            st.error("❌ No valid DL models selected!")
+            return {}
+        
+        results = {}
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for idx, (model_name, model) in enumerate(models_to_train.items()):
+            status_text.text(f'🧠 Training {model_name}...')
+            progress_bar.progress((idx + 1) / len(models_to_train))
+            
+            try:
+                start_time = time.time()
+                
+                # Train model with full data and epochs
+                history = model.fit(
+                    X_train, y_train_dl,
+                    epochs=epochs,
+                    batch_size=32,
+                    validation_data=(X_val, y_val_dl),
+                    callbacks=self.create_advanced_callbacks(),
+                    verbose=0
+                )
+                
+                # Store training history
+                self.training_history[model_name] = history.history
+                
+                # Make predictions
+                if task_type == 'classification':
+                    y_pred_proba = model.predict(X_test)
+                    
+                    if output_activation == 'sigmoid':
+                        y_pred = (y_pred_proba > 0.5).astype(int).ravel()
+                        roc_auc = roc_auc_score(y_test, y_pred_proba)
+                    else:
+                        y_pred = np.argmax(y_pred_proba, axis=1)
+                        roc_auc = roc_auc_score(y_test_dl, y_pred_proba, multi_class='ovr')
+                    
+                    # Calculate metrics
+                    accuracy = accuracy_score(y_test, y_pred)
+                    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+                    recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+                    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+                    
+                    results[model_name] = {
+                        'model': model,
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1,
+                        'roc_auc': roc_auc,
+                        'training_time': time.time() - start_time,
+                        'history': history.history
+                    }
+                    
+                else:
+                    y_pred = model.predict(X_test).ravel()
+                    
+                    # Calculate metrics
+                    mse = mean_squared_error(y_test, y_pred)
+                    rmse = np.sqrt(mse)
+                    mae = mean_absolute_error(y_test, y_pred)
+                    r2 = r2_score(y_test, y_pred)
+                    mape = mean_absolute_percentage_error(y_test, y_pred)
+                    
+                    results[model_name] = {
+                        'model': model,
+                        'mse': mse,
+                        'rmse': rmse,
+                        'mae': mae,
+                        'r2_score': r2,
+                        'mape': mape,
+                        'training_time': time.time() - start_time,
+                        'history': history.history
+                    }
+                
+                st.success(f"✅ {model_name} trained successfully!")
+                
+            except Exception as e:
+                st.warning(f"⚠️ Error training {model_name}: {str(e)}")
+                continue
+        
+        # Clear progress indicators
+        progress_bar.empty()
+        status_text.empty()
+        
+        return results
+
+class AdvancedDataVisualization:
+    """Advanced Data Visualization with Interactive Controls"""
+    
+    def __init__(self):
+        self.chart_data = {}
+    
+    def create_interactive_chart(self, df, chart_type, x_axis, y_axis, color_column=None, 
+                               title=None, height=500):
+        """Create interactive chart based on user selections"""
+        
+        try:
+            if chart_type == "Scatter Plot":
+                if color_column:
+                    fig = px.scatter(df, x=x_axis, y=y_axis, color=color_column, 
+                                   title=title, height=height)
+                else:
+                    fig = px.scatter(df, x=x_axis, y=y_axis, title=title, height=height)
+            
+            elif chart_type == "Line Chart":
+                if color_column:
+                    fig = px.line(df, x=x_axis, y=y_axis, color=color_column, 
+                                title=title, height=height)
+                else:
+                    fig = px.line(df, x=x_axis, y=y_axis, title=title, height=height)
+            
+            elif chart_type == "Bar Chart":
+                if color_column:
+                    fig = px.bar(df, x=x_axis, y=y_axis, color=color_column, 
+                               title=title, height=height)
+                else:
+                    fig = px.bar(df, x=x_axis, y=y_axis, title=title, height=height)
+            
+            elif chart_type == "Histogram":
+                if color_column:
+                    fig = px.histogram(df, x=x_axis, color=color_column, 
+                                     title=title, height=height, barmode='overlay')
+                else:
+                    fig = px.histogram(df, x=x_axis, title=title, height=height)
+            
+            elif chart_type == "Box Plot":
+                if color_column:
+                    fig = px.box(df, x=x_axis, y=y_axis, color=color_column, 
+                               title=title, height=height)
+                else:
+                    fig = px.box(df, x=x_axis, y=y_axis, title=title, height=height)
+            
+            elif chart_type == "Violin Plot":
+                if color_column:
+                    fig = px.violin(df, x=x_axis, y=y_axis, color=color_column, 
+                                  title=title, height=height)
+                else:
+                    fig = px.violin(df, x=x_axis, y=y_axis, title=title, height=height)
+            
+            elif chart_type == "Heatmap":
+                # For heatmap, we need to select only numeric columns
+                numeric_df = df.select_dtypes(include=[np.number])
+                if len(numeric_df.columns) > 1:
+                    corr_matrix = numeric_df.corr()
+                    fig = px.imshow(corr_matrix, title="Correlation Heatmap", 
+                                  height=height, aspect="auto")
+                else:
+                    st.warning("❌ Heatmap requires at least 2 numeric columns")
+                    return None
+            
+            elif chart_type == "Pie Chart":
+                if color_column:
+                    fig = px.pie(df, names=x_axis, values=y_axis, color=color_column,
+                               title=title, height=height)
+                else:
+                    fig = px.pie(df, names=x_axis, values=y_axis, title=title, height=height)
+            
+            elif chart_type == "Area Chart":
+                if color_column:
+                    fig = px.area(df, x=x_axis, y=y_axis, color=color_column,
+                                title=title, height=height)
+                else:
+                    fig = px.area(df, x=x_axis, y=y_axis, title=title, height=height)
+            
+            else:
+                st.error(f"❌ Chart type '{chart_type}' not supported")
+                return None
+            
+            # Update layout for better appearance
+            fig.update_layout(
+                template='plotly_white',
+                font=dict(size=12),
+                title_font_size=20,
+                showlegend=True
+            )
+            
+            return fig
+        
+        except Exception as e:
+            st.error(f"❌ Error creating chart: {str(e)}")
+            return None
+    
+    def create_advanced_dashboard(self, df):
+        """Create an advanced visualization dashboard"""
+        
+        st.markdown('<h2 class="sub-header">📊 Advanced Data Visualization Dashboard</h2>', unsafe_allow_html=True)
+        
+        # Store chart in session state to prevent reset
+        if 'current_chart' not in st.session_state:
+            st.session_state.current_chart = None
+        
+        # Chart configuration
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            chart_type = st.selectbox(
+                "📈 Chart Type",
+                ["Scatter Plot", "Line Chart", "Bar Chart", "Histogram", 
+                 "Box Plot", "Violin Plot", "Heatmap", "Pie Chart", "Area Chart"]
+            )
+        
+        with col2:
+            available_columns = df.columns.tolist()
+            x_axis = st.selectbox("X-Axis", available_columns, index=0)
+            
+            # For some charts, y-axis might not be needed
+            if chart_type in ["Histogram", "Pie Chart"]:
+                y_axis_options = [col for col in available_columns if col != x_axis]
+                if y_axis_options:
+                    y_axis = st.selectbox("Y-Axis/Values", y_axis_options, index=0)
+                else:
+                    y_axis = x_axis
+            else:
+                y_axis = st.selectbox("Y-Axis", [col for col in available_columns if col != x_axis], 
+                                    index=min(1, len(available_columns)-1))
+        
+        with col3:
+            color_options = ["None"] + available_columns
+            color_column = st.selectbox("Color By", color_options, index=0)
+            color_column = None if color_column == "None" else color_column
+        
+        # Additional options
+        col4, col5 = st.columns(2)
+        with col4:
+            chart_title = st.text_input("Chart Title", f"{chart_type}: {x_axis} vs {y_axis}")
+        with col5:
+            chart_height = st.slider("Chart Height", 300, 800, 500)
+        
+        # Generate chart
+        if st.button("🎨 Generate Chart", type="primary"):
+            with st.spinner('Creating visualization...'):
+                fig = self.create_interactive_chart(
+                    df, chart_type, x_axis, y_axis, color_column, 
+                    chart_title, chart_height
+                )
+                
+                if fig:
+                    st.session_state.current_chart = fig
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        # Download options for the current chart
+        if st.session_state.current_chart is not None:
+            st.subheader("💾 Download Options")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # HTML download
+                html_string = st.session_state.current_chart.to_html()
+                st.download_button(
+                    label="📥 Download as HTML",
+                    data=html_string,
+                    file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html"
+                )
+            
+            with col2:
+                # PNG download
+                img_bytes = st.session_state.current_chart.to_image(format="png")
+                st.download_button(
+                    label="📷 Download as PNG",
+                    data=img_bytes,
+                    file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                    mime="image/png"
+                )
+        
+        # Quick visualization suggestions
+        st.subheader("🚀 Quick Visualization Suggestions")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        
+        with col1:
+            if st.button("📈 Correlation Heatmap") and len(numeric_cols) > 1:
+                fig = self.create_interactive_chart(df, "Heatmap", "", "", None, "Correlation Heatmap", 500)
+                if fig:
+                    st.session_state.current_chart = fig
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            if st.button("📊 Distribution Overview") and numeric_cols:
+                fig = self.create_interactive_chart(df, "Histogram", numeric_cols[0], "", None, 
+                                                  f"Distribution of {numeric_cols[0]}", 500)
+                if fig:
+                    st.session_state.current_chart = fig
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with col3:
+            if st.button("🎯 Category Analysis") and categorical_cols and numeric_cols:
+                # Use the first categorical and first numeric column
+                cat_col = categorical_cols[0]
+                num_col = numeric_cols[0]
+                fig = self.create_interactive_chart(df, "Box Plot", cat_col, num_col, 
+                                                  None, f"{num_col} by {cat_col}", 500)
+                if fig:
+                    st.session_state.current_chart = fig
+                    st.plotly_chart(fig, use_container_width=True)
+
+class AdvancedAnalytics:
+    """Advanced Analytics Module with Statistical Analysis"""
+    
+    def __init__(self):
+        self.analysis_results = {}
+    
+    def perform_comprehensive_analysis(self, df):
+        """Perform comprehensive statistical analysis"""
+        st.markdown('<h2 class="sub-header">🔍 Advanced Analytics & Statistical Analysis</h2>', unsafe_allow_html=True)
+        
+        # Let user choose which analyses to perform
+        st.subheader("🎯 Select Analyses to Perform")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            show_stats = st.checkbox("Statistical Summary", value=True)
+            show_correlation = st.checkbox("Correlation Analysis", value=True)
+        with col2:
+            show_distribution = st.checkbox("Distribution Analysis", value=True)
+            show_outliers = st.checkbox("Outlier Detection", value=True)
+        with col3:
+            show_relationships = st.checkbox("Feature Relationships", value=True)
+            show_clustering = st.checkbox("Cluster Analysis", value=False)
+        
+        # Basic dataset info
+        if show_stats:
+            st.subheader("📋 Dataset Overview")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Rows", len(df))
+            with col2:
+                st.metric("Total Columns", len(df.columns))
+            with col3:
+                st.metric("Numeric Columns", len(df.select_dtypes(include=[np.number]).columns))
+            with col4:
+                st.metric("Categorical Columns", len(df.select_dtypes(include=['object']).columns))
+            
+            # Statistical Summary
+            st.subheader("📊 Statistical Summary")
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_cols) > 0:
+                st.dataframe(df[numeric_cols].describe(), use_container_width=True)
+        
+        # Correlation Analysis
+        if show_correlation:
+            st.subheader("🔗 Correlation Analysis")
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_cols) > 1:
+                corr_matrix = df[numeric_cols].corr()
+                
+                fig = px.imshow(corr_matrix, 
+                              title="Correlation Heatmap",
+                              color_continuous_scale='RdBu_r',
+                              aspect="auto")
+                fig.update_layout(height=600)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Top correlations
+                st.write("**Top Positive Correlations:**")
+                corr_pairs = corr_matrix.unstack()
+                sorted_pairs = corr_pairs.sort_values(ascending=False)
+                top_positive = sorted_pairs[sorted_pairs < 1].head(10)
+                st.dataframe(top_positive, use_container_width=True)
+        
+        # Distribution Analysis
+        if show_distribution:
+            st.subheader("📈 Distribution Analysis")
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_cols) > 0:
+                selected_col = st.selectbox("Select column for distribution analysis:", numeric_cols)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    # Histogram
+                    fig_hist = px.histogram(df, x=selected_col, title=f"Distribution of {selected_col}")
+                    st.plotly_chart(fig_hist, use_container_width=True)
+                
+                with col2:
+                    # Box plot
+                    fig_box = px.box(df, y=selected_col, title=f"Box Plot of {selected_col}")
+                    st.plotly_chart(fig_box, use_container_width=True)
+                
+                # Normality tests
+                st.write("**Normality Tests:**")
+                data = df[selected_col].dropna()
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    try:
+                        stat, p_value = normaltest(data)
+                        st.metric("Normaltest p-value", f"{p_value:.4f}")
+                    except:
+                        st.write("Normaltest: N/A")
+                
+                with col2:
+                    try:
+                        stat, p_value = shapiro(data)
+                        st.metric("Shapiro-Wilk p-value", f"{p_value:.4f}")
+                    except:
+                        st.write("Shapiro-Wilk: N/A")
+                
+                with col3:
+                    try:
+                        stat, p_value = jarque_bera(data)
+                        st.metric("Jarque-Bera p-value", f"{p_value:.4f}")
+                    except:
+                        st.write("Jarque-Bera: N/A")
+        
+        # Outlier Detection
+        if show_outliers:
+            st.subheader("📊 Outlier Detection")
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_cols) > 0:
+                outlier_col = st.selectbox("Select column for outlier detection:", numeric_cols, key="outlier_col")
+                data = df[outlier_col].dropna()
+                
+                Q1 = data.quantile(0.25)
+                Q3 = data.quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                
+                outliers = data[(data < lower_bound) | (data > upper_bound)]
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Outliers", len(outliers))
+                with col2:
+                    st.metric("Outlier Percentage", f"{(len(outliers)/len(data)*100):.2f}%")
+                with col3:
+                    st.metric("Outlier Range", f"[{lower_bound:.2f}, {upper_bound:.2f}]")
+        
+        # Feature Relationships
+        if show_relationships:
+            st.subheader("🔄 Feature Relationships")
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_cols) >= 2:
+                col1, col2 = st.columns(2)
+                with col1:
+                    x_feature = st.selectbox("X Feature:", numeric_cols, index=0, key="x_feature")
+                with col2:
+                    y_feature = st.selectbox("Y Feature:", numeric_cols, index=min(1, len(numeric_cols)-1), key="y_feature")
+                
+                # Use simple scatter plot without trendline to avoid statsmodels dependency
+                fig_scatter = px.scatter(df, x=x_feature, y=y_feature, 
+                                       title=f"Relationship: {x_feature} vs {y_feature}")
+                st.plotly_chart(fig_scatter, use_container_width=True)
+                
+                # Correlation stats
+                correlation = df[x_feature].corr(df[y_feature])
+                st.metric("Pearson Correlation", f"{correlation:.4f}")
+        
+        # Cluster Analysis
+        if show_clustering:
+            st.subheader("🔮 Cluster Analysis")
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_cols) >= 2:
+                # Use first two numeric columns for clustering
+                X = df[numeric_cols[:2]].dropna()
+                
+                if len(X) > 0:
+                    # Perform K-means clustering
+                    kmeans = KMeans(n_clusters=3, random_state=42)
+                    clusters = kmeans.fit_predict(X)
+                    
+                    # Create cluster visualization
+                    X_clustered = X.copy()
+                    X_clustered['Cluster'] = clusters
+                    fig = px.scatter(
+                        X_clustered, x=numeric_cols[0], y=numeric_cols[1], color='Cluster',
+                        title="K-means Clustering (First 2 Features)",
+                        hover_data=X_clustered.columns
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+class ModelInterpretability:
+    """Advanced Model Interpretability and Explainability"""
+    
+    def __init__(self):
+        self.explanations = {}
+        
+    def calculate_feature_importance(self, model, X, y, feature_names, method='permutation'):
+        """Calculate feature importance using multiple methods"""
+        
+        if method == 'permutation':
+            # Permutation importance
+            result = permutation_importance(
+                model, X, y, 
+                n_repeats=10,
+                random_state=42,
+                n_jobs=1
+            )
+            
+            importance_df = pd.DataFrame({
+                'feature': feature_names,
+                'importance_mean': result.importances_mean,
+                'importance_std': result.importances_std
+            }).sort_values('importance_mean', ascending=False)
+            
+        elif method == 'builtin' and hasattr(model, 'feature_importances_'):
+            # Built-in feature importance
+            importance_df = pd.DataFrame({
+                'feature': feature_names,
+                'importance': model.feature_importances_
+            }).sort_values('importance', ascending=False)
+            
+        else:
+            # Use SHAP-like approximation
+            baseline_score = model.score(X, y)
+            importance_scores = []
+            
+            for feature in range(X.shape[1]):
+                X_permuted = X.copy()
+                np.random.shuffle(X_permuted[:, feature])
+                permuted_score = model.score(X_permuted, y)
+                importance_scores.append(baseline_score - permuted_score)
+            
+            importance_df = pd.DataFrame({
+                'feature': feature_names,
+                'importance': importance_scores
+            }).sort_values('importance', ascending=False)
+        
+        return importance_df
+
+class AdvancedModelEvaluation:
+    """Advanced Model Evaluation and Comparison"""
+    
+    def __init__(self):
+        self.evaluation_results = {}
+        
+    def comprehensive_model_evaluation(self, models_results, X_test, y_test, task_type='classification'):
+        """Perform comprehensive model evaluation"""
+        
+        st.subheader("📊 Comprehensive Model Evaluation")
+        
+        # Convert results to DataFrame
+        if task_type == 'classification':
+            metrics_df = pd.DataFrame({
+                model_name: {
+                    'Accuracy': results['accuracy'],
+                    'Precision': results['precision'],
+                    'Recall': results['recall'],
+                    'F1-Score': results['f1_score'],
+                    'ROC-AUC': results.get('roc_auc', None),
+                    'Training Time (s)': results['training_time']
+                }
+                for model_name, results in models_results.items()
+            }).T
+            
+        else:
+            metrics_df = pd.DataFrame({
+                model_name: {
+                    'MSE': results['mse'],
+                    'RMSE': results['rmse'],
+                    'MAE': results['mae'],
+                    'R² Score': results['r2_score'],
+                    'MAPE': results.get('mape', None),
+                    'Training Time (s)': results['training_time']
+                }
+                for model_name, results in models_results.items()
+            }).T
+        
+        # Display metrics
+        st.dataframe(metrics_df.round(4), use_container_width=True)
+        
+        # Create comparison plots
+        if task_type == 'classification':
+            self.plot_classification_comparison(models_results)
+        else:
+            self.plot_regression_comparison(models_results, y_test)
+        
+        return metrics_df
+    
+    def plot_classification_comparison(self, models_results):
+        """Plot classification model comparison"""
+        
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=['Accuracy Comparison', 'Precision-Recall Comparison',
+                          'F1-Score Comparison', 'Training Time Comparison'],
+            vertical_spacing=0.15,
+            horizontal_spacing=0.1
+        )
+        
+        model_names = list(models_results.keys())
+        
+        # Accuracy
+        accuracies = [results['accuracy'] for results in models_results.values()]
+        fig.add_trace(
+            go.Bar(x=model_names, y=accuracies, name='Accuracy'),
+            row=1, col=1
+        )
+        
+        # Precision-Recall
+        precisions = [results['precision'] for results in models_results.values()]
+        recalls = [results['recall'] for results in models_results.values()]
+        fig.add_trace(
+            go.Scatter(x=precisions, y=recalls, mode='markers+text',
+                      text=model_names, textposition='top center',
+                      marker=dict(size=12), name='Precision-Recall'),
+            row=1, col=2
+        )
+        
+        # F1-Score
+        f1_scores = [results['f1_score'] for results in models_results.values()]
+        fig.add_trace(
+            go.Bar(x=model_names, y=f1_scores, name='F1-Score'),
+            row=2, col=1
+        )
+        
+        # Training Time
+        training_times = [results['training_time'] for results in models_results.values()]
+        fig.add_trace(
+            go.Bar(x=model_names, y=training_times, name='Training Time (s)'),
+            row=2, col=2
+        )
+        
+        fig.update_layout(height=600, title_text="Classification Model Comparison")
+        st.plotly_chart(fig, use_container_width=True)
+    
+    def plot_regression_comparison(self, models_results, y_test):
+        """Plot regression model comparison"""
+        
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=['R² Score Comparison', 'Error Metrics Comparison',
+                          'Prediction vs Actual', 'Training Time Comparison'],
+            vertical_spacing=0.15,
+            horizontal_spacing=0.1
+        )
+        
+        model_names = list(models_results.keys())
+        
+        # R² Score
+        r2_scores = [results['r2_score'] for results in models_results.values()]
+        fig.add_trace(
+            go.Bar(x=model_names, y=r2_scores, name='R² Score'),
+            row=1, col=1
+        )
+        
+        # Error Metrics
+        mses = [results['mse'] for results in models_results.values()]
+        rmses = [results['rmse'] for results in models_results.values()]
+        maes = [results['mae'] for results in models_results.values()]
+        
+        fig.add_trace(
+            go.Bar(x=model_names, y=mses, name='MSE'),
+            row=1, col=2
+        )
+        fig.add_trace(
+            go.Bar(x=model_names, y=rmses, name='RMSE'),
+            row=1, col=2
+        )
+        fig.add_trace(
+            go.Bar(x=model_names, y=maes, name='MAE'),
+            row=1, col=2
+        )
+        
+        # Prediction vs Actual (for best model)
+        best_model_name = max(models_results.keys(), 
+                            key=lambda x: models_results[x]['r2_score'])
+        best_model = models_results[best_model_name]['model']
+        
+        try:
+            y_pred = best_model.predict(X_test)
+            fig.add_trace(
+                go.Scatter(x=y_test, y=y_pred, mode='markers',
+                          name='Predictions', marker=dict(opacity=0.6)),
+                row=2, col=1
+            )
+            fig.add_trace(
+                go.Scatter(x=[y_test.min(), y_test.max()], 
+                          y=[y_test.min(), y_test.max()],
+                          mode='lines', name='Ideal', line=dict(dash='dash')),
+                row=2, col=1
+            )
+        except:
+            pass
+        
+        # Training Time
+        training_times = [results['training_time'] for results in models_results.values()]
+        fig.add_trace(
+            go.Bar(x=model_names, y=training_times, name='Training Time (s)'),
+            row=2, col=2
+        )
+        
+        fig.update_layout(height=600, title_text="Regression Model Comparison")
+        st.plotly_chart(fig, use_container_width=True)
+
+class ModelDeployment:
+    """Advanced Model Deployment and Productionization"""
+    
+    def __init__(self):
+        self.deployment_artifacts = {}
+    
+    def create_production_pipeline(self, best_model, feature_names, target_name, 
+                                 task_type, scaler=None, encoder=None):
+        """Create production-ready deployment pipeline"""
+        
+        # Fix the deployment code - remove the problematic format string
+        feature_names_str = str(feature_names)
+        
+        deployment_code = f"""
+# Production Model Deployment Pipeline
+# Generated by Expert AutoML Platform
+# Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+import pandas as pd
+import numpy as np
+import pickle
+import json
+from sklearn.preprocessing import StandardScaler
+import warnings
+warnings.filterwarnings('ignore')
+
+class ProductionModel:
+    \"\"\"Production-ready model deployment class\"\"\"
+    
+    def __init__(self):
+        self.model = None
+        self.scaler = None
+        self.encoder = None
+        self.feature_names = {feature_names_str}
+        self.target_name = '{target_name}'
+        self.task_type = '{task_type}'
+        self.model_metadata = {{
+            'version': '1.0.0',
+            'created_date': '{datetime.now().strftime('%Y-%m-%d')}',
+            'task_type': '{task_type}',
+            'feature_count': {len(feature_names)}
+        }}
+    
+    def load_artifacts(self, model_path, scaler_path=None, encoder_path=None):
+        \"\"\"Load model and preprocessing artifacts\"\"\"
+        try:
+            with open(model_path, 'rb') as f:
+                self.model = pickle.load(f)
+            
+            if scaler_path:
+                with open(scaler_path, 'rb') as f:
+                    self.scaler = pickle.load(f)
+            
+            if encoder_path:
+                with open(encoder_path, 'rb') as f:
+                    self.encoder = pickle.load(f)
+            
+            print("✅ Model artifacts loaded successfully!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error loading artifacts: {{e}}")
+            return False
+    
+    def validate_input(self, input_data):
+        \"\"\"Validate input data\"\"\"
+        if isinstance(input_data, dict):
+            input_df = pd.DataFrame([input_data])
+        elif isinstance(input_data, pd.DataFrame):
+            input_df = input_data.copy()
+        else:
+            raise ValueError("Input must be dictionary or DataFrame")
+        
+        # Check required features
+        missing_features = set(self.feature_names) - set(input_df.columns)
+        if missing_features:
+            raise ValueError(f"Missing features: {{missing_features}}")
+        
+        # Select and order features
+        input_df = input_df[self.feature_names]
+        
+        return input_df
+    
+    def preprocess_input(self, input_data):
+        \"\"\"Preprocess input data\"\"\"
+        input_df = self.validate_input(input_data)
+        
+        # Handle missing values
+        input_df = input_df.fillna(input_df.mean())
+        
+        # Scale features if scaler exists
+        if self.scaler:
+            input_df = pd.DataFrame(
+                self.scaler.transform(input_df),
+                columns=input_df.columns,
+                index=input_df.index
+            )
+        
+        return input_df
+    
+    def predict(self, input_data, return_probabilities=False, threshold=0.5):
+        \"\"\"Make predictions\"\"\"
+        if self.model is None:
+            raise ValueError("Model not loaded. Call load_artifacts() first.")
+        
+        processed_data = self.preprocess_input(input_data)
+        
+        if self.task_type == 'classification':
+            predictions = self.model.predict(processed_data)
+            probabilities = None
+            
+            if hasattr(self.model, 'predict_proba'):
+                probabilities = self.model.predict_proba(processed_data)
+            
+            # Apply threshold if needed
+            if return_probabilities and probabilities is not None:
+                if probabilities.shape[1] == 2:  # Binary classification
+                    positive_probs = probabilities[:, 1]
+                    predictions = (positive_probs > threshold).astype(int)
+                return {{
+                    'predictions': predictions.tolist(),
+                    'probabilities': probabilities.tolist(),
+                    'confidence': np.max(probabilities, axis=1).tolist()
+                }}
+            else:
+                return {{
+                    'predictions': predictions.tolist(),
+                    'probabilities': probabilities.tolist() if probabilities is not None else None
+                }}
+        
+        else:  # regression
+            predictions = self.model.predict(processed_data)
+            return {{
+                'predictions': predictions.tolist(),
+                'confidence': None  # Not applicable for regression
+            }}
+    
+    def batch_predict(self, input_file_path, output_file_path, **kwargs):
+        \"\"\"Perform batch predictions on a CSV file\"\"\"
+        try:
+            # Read input data
+            input_data = pd.read_csv(input_file_path)
+            
+            # Make predictions
+            results = self.predict(input_data, **kwargs)
+            
+            # Add predictions to original data
+            output_data = input_data.copy()
+            output_data['predictions'] = results['predictions']
+            
+            if results.get('probabilities'):
+                if isinstance(results['probabilities'][0], list):
+                    # Multi-class probabilities
+                    for i in range(len(results['probabilities'][0])):
+                        output_data[f'probability_class_{{i}}'] = [p[i] for p in results['probabilities']]
+                else:
+                    # Binary classification probability
+                    output_data['probability'] = results['probabilities']
+            
+            if results.get('confidence'):
+                output_data['prediction_confidence'] = results['confidence']
+            
+            # Save results
+            output_data.to_csv(output_file_path, index=False)
+            print(f"✅ Batch predictions saved to {{output_file_path}}")
+            
+            return output_data
+            
+        except Exception as e:
+            print(f"❌ Error in batch prediction: {{e}}")
+            return None
+    
+    def get_model_info(self):
+        \"\"\"Get model information and metadata\"\"\"
+        info = self.model_metadata.copy()
+        info.update({{
+            'feature_names': self.feature_names,
+            'target_name': self.target_name,
+            'model_type': type(self.model).__name__,
+            'has_scaler': self.scaler is not None,
+            'has_encoder': self.encoder is not None
+        }})
+        return info
+
+# Example usage
+if __name__ == "__main__":
+    # Initialize deployment
+    deployment = ProductionModel()
+    
+    # Load model artifacts (update paths as needed)
+    # deployment.load_artifacts(
+    #     model_path='best_model.pkl',
+    #     scaler_path='scaler.pkl',
+    #     encoder_path='encoder.pkl'
+    # )
+    
+    # Example prediction
+    sample_input = {{
+        {', '.join([f"'{feature}': 0.0" for feature in feature_names[:min(3, len(feature_names))]])}
+        # ... add all feature values
+    }}
+    
+    # result = deployment.predict(sample_input)
+    # print("Prediction result:", result)
+    
+    # Batch prediction example
+    # deployment.batch_predict('input_data.csv', 'predictions.csv')
+    
+    # Get model info
+    # print("Model info:", deployment.get_model_info())
+"""
+        
+        return deployment_code
+    
+    def save_deployment_artifacts(self, best_model, feature_names, scaler=None, 
+                                encoder=None, model_name="best_model"):
+        """Save all deployment artifacts"""
+        
+        artifacts = {}
+        
+        # Save model
+        model_path = f"{model_name}.pkl"
+        try:
+            with open(model_path, 'wb') as f:
+                pickle.dump(best_model, f)
+            artifacts['model'] = model_path
+        except Exception as e:
+            st.error(f"❌ Error saving model: {e}")
+            return None
+        
+        # Save scaler if exists
+        if scaler is not None:
+            scaler_path = "scaler.pkl"
+            try:
+                with open(scaler_path, 'wb') as f:
+                    pickle.dump(scaler, f)
+                artifacts['scaler'] = scaler_path
+            except Exception as e:
+                st.warning(f"⚠️ Error saving scaler: {e}")
+        
+        # Save encoder if exists
+        if encoder is not None:
+            encoder_path = "encoder.pkl"
+            try:
+                with open(encoder_path, 'wb') as f:
+                    pickle.dump(encoder, f)
+                artifacts['encoder'] = encoder_path
+            except Exception as e:
+                st.warning(f"⚠️ Error saving encoder: {e}")
+        
+        # Save feature names
+        features_path = "feature_names.json"
+        try:
+            with open(features_path, 'w') as f:
+                json.dump(feature_names, f)
+            artifacts['feature_names'] = features_path
+        except Exception as e:
+            st.warning(f"⚠️ Error saving feature names: {e}")
+        
+        # Save metadata
+        metadata = {
+            'created_date': datetime.now().isoformat(),
+            'model_type': type(best_model).__name__,
+            'feature_count': len(feature_names),
+            'artifacts_version': '1.0'
+        }
+        
+        metadata_path = "model_metadata.json"
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f)
+            artifacts['metadata'] = metadata_path
+        except Exception as e:
+            st.warning(f"⚠️ Error saving metadata: {e}")
+        
+        self.deployment_artifacts = artifacts
+        return artifacts
+    
+    def get_deployment_guide(self, task_type, model_type):
+        """Get deployment guide and suggestions"""
+        
+        st.markdown("""
+        <div class="info-box">
+            <h3>🚀 Deployment Guide & Next Steps</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.subheader("📋 Deployment Options")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            ### 🐍 Streamlit Deployment
+            
+            **Quick Setup:**
+            ```python
+            import streamlit as st
+            import pickle
+            import pandas as pd
+            
+            # Load your model
+            with open('best_model.pkl', 'rb') as f:
+                model = pickle.load(f)
+            
+            st.title('ML Model Deployment')
+            
+            # Create input fields
+            features = []
+            for feature in feature_names:
+                val = st.number_input(feature, value=0.0)
+                features.append(val)
+            
+            if st.button('Predict'):
+                prediction = model.predict([features])
+                st.success(f'Prediction: {prediction[0]}')
+            ```
+            
+            **Deployment Platforms:**
+            - Streamlit Sharing (Free)
+            - Heroku
+            - AWS EC2
+            - Google Cloud Run
+            """)
+        
+        with col2:
+            st.markdown("""
+            ### 🌐 REST API Deployment
+            
+            **FastAPI Example:**
+            ```python
+            from fastapi import FastAPI
+            import pickle
+            import pandas as pd
+            
+            app = FastAPI()
+            
+            with open('best_model.pkl', 'rb') as f:
+                model = pickle.load(f)
+            
+            @app.post("/predict")
+            async def predict(features: dict):
+                input_data = [features[f] for f in feature_names]
+                prediction = model.predict([input_data])
+                return {"prediction": prediction[0]}
+            ```
+            
+            **Deployment Options:**
+            - Docker + Any cloud provider
+            - AWS Lambda
+            - Google Cloud Functions
+            - Azure Functions
+            """)
+        
+        st.subheader("🔧 Production Best Practices")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            ### ✅ Model Monitoring
+            - Track prediction drift
+            - Monitor feature distributions
+            - Set up alerting for anomalies
+            - Regular model retraining
+            
+            ### 🛡️ Security
+            - Input validation
+            - Rate limiting
+            - API authentication
+            - Data encryption
+            """)
+        
+        with col2:
+            st.markdown("""
+            ### 📊 Performance
+            - Model caching
+            - Batch predictions
+            - Async processing for large datasets
+            - Load balancing
+            
+            ### 🔄 CI/CD
+            - Automated testing
+            - Version control for models
+            - Rollback strategies
+            - A/B testing
+            """)
+        
+        st.subheader("🎯 Next Steps")
+        
+        st.markdown(f"""
+        1. **Test Locally** - Run the provided deployment code locally first
+        2. **Containerize** - Create a Docker image for your model
+        3. **Choose Platform** - Select deployment platform based on your needs
+        4. **Monitor** - Set up monitoring and alerting
+        5. **Scale** - Plan for scalability as usage grows
+        
+        **Recommended for {task_type} task:**
+        - For prototypes: Streamlit Sharing
+        - For production: FastAPI + Docker
+        - For serverless: AWS Lambda/Google Cloud Functions
+        """)
 
 def detect_encoding(file):
     """Detect file encoding for proper CSV reading"""
@@ -145,6 +1928,7 @@ def advanced_data_profiling(df):
     """Generate comprehensive data profiling report"""
     st.markdown('<h2 class="sub-header">📊 Advanced Data Profiling</h2>', unsafe_allow_html=True)
     
+    # Basic statistics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -197,24 +1981,6 @@ def advanced_data_profiling(df):
     })
     
     st.dataframe(col_stats, use_container_width=True)
-    
-    # Distribution analysis for numeric columns
-    if numeric_cols:
-        st.subheader("📈 Numeric Columns Distribution")
-        for col in numeric_cols[:5]:  # Show first 5 numeric columns
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                fig = px.histogram(df, x=col, title=f'Distribution of {col}', 
-                                 color_discrete_sequence=['#667eea'])
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                fig = px.box(df, y=col, title=f'Box Plot of {col}',
-                           color_discrete_sequence=['#764ba2'])
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
     
     return numeric_cols, categorical_cols, datetime_cols
 
@@ -318,1447 +2084,28 @@ def intelligent_data_cleaning(df, missing_thresh=0.5, fill_num_option='mean',
     with col2:
         st.metric("Cleaned Shape", f"{df_cleaned.shape[0]} × {df_cleaned.shape[1]}")
     
-    # Download cleaned dataset
-    st.subheader("📥 Download Cleaned Dataset")
-    csv_data = df_cleaned.to_csv(index=False)
+    # ADDED: Download cleaned data option
+    st.subheader("💾 Download Cleaned Data")
+    csv = df_cleaned.to_csv(index=False)
     st.download_button(
-        label="📥 Download Cleaned CSV",
-        data=csv_data,
-        file_name="cleaned_dataset.csv",
+        label="📥 Download Cleaned Data as CSV",
+        data=csv,
+        file_name="cleaned_data.csv",
         mime="text/csv"
     )
     
     return df_cleaned
 
-def create_advanced_visualizations(df, sample_size=5000):
-    """Create comprehensive interactive visualizations with individual chart selection"""
-    st.markdown('<h2 class="sub-header">📊 Advanced Interactive Visualizations</h2>', unsafe_allow_html=True)
-    
-    # Sample data for performance
-    if len(df) > sample_size:
-        df_sample = df.sample(n=sample_size, random_state=42)
-        st.info(f"📊 Visualizing a sample of {sample_size:,} rows out of {len(df):,} total rows for performance.")
-    else:
-        df_sample = df.copy()
-    
-    numeric_cols = df_sample.select_dtypes(include=[np.number]).columns.tolist()
-    categorical_cols = df_sample.select_dtypes(include=['object']).columns.tolist()
-    datetime_cols = df_sample.select_dtypes(include=['datetime64']).columns.tolist()
-    all_cols = df_sample.columns.tolist()
-    
-    # Sidebar for visualization controls
-    st.sidebar.header('🎨 Visualization Controls')
-    
-    # Chart type selection
-    chart_types = {
-        "Scatter Plot": "scatter",
-        "Line Chart": "line", 
-        "Bar Chart": "bar",
-        "Histogram": "histogram",
-        "Box Plot": "box",
-        "Violin Plot": "violin",
-        "Heatmap": "heatmap",
-        "Area Chart": "area",
-        "Pie Chart": "pie",
-        "Sunburst Chart": "sunburst",
-        "Treemap": "treemap",
-        "3D Scatter Plot": "scatter_3d",
-        "Correlation Matrix": "correlation",
-        "Distribution Plot": "distribution",
-        "Pair Plot": "pair_plot",
-        "Parallel Coordinates": "parallel",
-        "Radar Chart": "radar",
-        "Bubble Chart": "bubble",
-        "Density Heatmap": "density_heatmap",
-        "Statistical Summary": "stats_summary"
-    }
-    
-    selected_chart = st.sidebar.selectbox(
-        "Select Chart Type:",
-        list(chart_types.keys())
-    )
-    
-    chart_type = chart_types[selected_chart]
-    
-    # Dynamic axis selection based on chart type
-    st.sidebar.subheader('📊 Chart Configuration')
-    
-    # Color scheme selection
-    color_schemes = {
-        'Viridis': px.colors.sequential.Viridis,
-        'Plasma': px.colors.sequential.Plasma,
-        'Blues': px.colors.sequential.Blues,
-        'Reds': px.colors.sequential.Reds,
-        'Plotly': px.colors.qualitative.Plotly,
-        'Set1': px.colors.qualitative.Set1,
-        'Custom': ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe']
-    }
-    
-    selected_color_scheme = st.sidebar.selectbox("Color Scheme:", list(color_schemes.keys()))
-    colors = color_schemes[selected_color_scheme]
-    
-    # Chart-specific configurations
-    if chart_type in ["scatter", "line", "area", "bubble"]:
-        x_axis = st.sidebar.selectbox("X-axis:", all_cols, key='x_axis')
-        y_axis = st.sidebar.selectbox("Y-axis:", numeric_cols, key='y_axis')
-        color_col = st.sidebar.selectbox("Color by (optional):", [None] + all_cols, key='color')
-        
-        if chart_type == "bubble":
-            size_col = st.sidebar.selectbox("Size by:", numeric_cols, key='size')
-        
-    elif chart_type == "bar":
-        x_axis = st.sidebar.selectbox("X-axis (Categories):", all_cols, key='bar_x')
-        y_axis = st.sidebar.selectbox("Y-axis (Values):", [None] + numeric_cols, key='bar_y')
-        color_col = st.sidebar.selectbox("Color by (optional):", [None] + all_cols, key='bar_color')
-        
-    elif chart_type == "histogram":
-        x_axis = st.sidebar.selectbox("Column for Histogram:", numeric_cols, key='hist_x')
-        bins = st.sidebar.slider("Number of Bins:", 10, 100, 30)
-        color_col = st.sidebar.selectbox("Color by (optional):", [None] + all_cols, key='hist_color')
-        
-    elif chart_type in ["box", "violin"]:
-        x_axis = st.sidebar.selectbox("X-axis (Categories):", [None] + all_cols, key='box_x')
-        y_axis = st.sidebar.selectbox("Y-axis (Values):", numeric_cols, key='box_y')
-        color_col = st.sidebar.selectbox("Color by (optional):", [None] + all_cols, key='box_color')
-        
-    elif chart_type == "pie":
-        values_col = st.sidebar.selectbox("Values:", numeric_cols, key='pie_values')
-        names_col = st.sidebar.selectbox("Names:", all_cols, key='pie_names')
-        
-    elif chart_type in ["sunburst", "treemap"]:
-        path_cols = st.sidebar.multiselect("Path (Hierarchy):", all_cols, key='path')
-        values_col = st.sidebar.selectbox("Values:", numeric_cols, key='hierarchy_values')
-        
-    elif chart_type == "scatter_3d":
-        x_axis = st.sidebar.selectbox("X-axis:", numeric_cols, key='3d_x')
-        y_axis = st.sidebar.selectbox("Y-axis:", numeric_cols, key='3d_y', index=min(1, len(numeric_cols)-1))
-        z_axis = st.sidebar.selectbox("Z-axis:", numeric_cols, key='3d_z', index=min(2, len(numeric_cols)-1))
-        color_col = st.sidebar.selectbox("Color by (optional):", [None] + all_cols, key='3d_color')
-        size_col = st.sidebar.selectbox("Size by (optional):", [None] + numeric_cols, key='3d_size')
-        
-    elif chart_type == "heatmap":
-        heatmap_cols = st.sidebar.multiselect("Select Columns for Heatmap:", numeric_cols, 
-                                             default=numeric_cols[:min(10, len(numeric_cols))], key='heatmap_cols')
-        
-    elif chart_type == "parallel":
-        parallel_cols = st.sidebar.multiselect("Select Columns:", numeric_cols, 
-                                              default=numeric_cols[:min(6, len(numeric_cols))], key='parallel_cols')
-        color_col = st.sidebar.selectbox("Color by (optional):", [None] + all_cols, key='parallel_color')
-        
-    elif chart_type == "radar":
-        radar_cols = st.sidebar.multiselect("Select Metrics:", numeric_cols, 
-                                           default=numeric_cols[:min(5, len(numeric_cols))], key='radar_cols')
-        category_col = st.sidebar.selectbox("Category (optional):", [None] + all_cols, key='radar_category')
-        
-    elif chart_type == "density_heatmap":
-        x_axis = st.sidebar.selectbox("X-axis:", numeric_cols, key='density_x')
-        y_axis = st.sidebar.selectbox("Y-axis:", numeric_cols, key='density_y', index=min(1, len(numeric_cols)-1))
-        
-    # Generate the selected chart
-    st.subheader(f"📊 {selected_chart}")
-    
-    try:
-        if chart_type == "scatter":
-            fig = px.scatter(df_sample, x=x_axis, y=y_axis, color=color_col,
-                           title=f'Scatter Plot: {x_axis} vs {y_axis}',
-                           color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "line":
-            fig = px.line(df_sample, x=x_axis, y=y_axis, color=color_col,
-                         title=f'Line Chart: {y_axis} over {x_axis}',
-                         color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "bar":
-            if y_axis:
-                fig = px.bar(df_sample, x=x_axis, y=y_axis, color=color_col,
-                           title=f'Bar Chart: {y_axis} by {x_axis}',
-                           color_discrete_sequence=colors if isinstance(colors, list) else None)
-            else:
-                # Count plot
-                value_counts = df_sample[x_axis].value_counts().head(20)
-                fig = px.bar(x=value_counts.index, y=value_counts.values,
-                           title=f'Count Plot: {x_axis}',
-                           color_discrete_sequence=colors if isinstance(colors, list) else None)
-                fig.update_layout(xaxis_title=x_axis, yaxis_title='Count')
-                
-        elif chart_type == "histogram":
-            fig = px.histogram(df_sample, x=x_axis, color=color_col, nbins=bins,
-                             title=f'Histogram: {x_axis}',
-                             color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "box":
-            fig = px.box(df_sample, x=x_axis, y=y_axis, color=color_col,
-                        title=f'Box Plot: {y_axis} by {x_axis}' if x_axis else f'Box Plot: {y_axis}',
-                        color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "violin":
-            fig = px.violin(df_sample, x=x_axis, y=y_axis, color=color_col,
-                           title=f'Violin Plot: {y_axis} by {x_axis}' if x_axis else f'Violin Plot: {y_axis}',
-                           color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "area":
-            fig = px.area(df_sample, x=x_axis, y=y_axis, color=color_col,
-                         title=f'Area Chart: {y_axis} over {x_axis}',
-                         color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "pie":
-            # Aggregate data if needed
-            if df_sample[names_col].dtype == 'object':
-                pie_data = df_sample.groupby(names_col)[values_col].sum().reset_index()
-                fig = px.pie(pie_data, values=values_col, names=names_col,
-                           title=f'Pie Chart: {values_col} by {names_col}',
-                           color_discrete_sequence=colors if isinstance(colors, list) else None)
-            else:
-                fig = px.pie(df_sample, values=values_col, names=names_col,
-                           title=f'Pie Chart: {values_col} by {names_col}',
-                           color_discrete_sequence=colors if isinstance(colors, list) else None)
-                
-        elif chart_type == "sunburst":
-            if len(path_cols) > 0:
-                fig = px.sunburst(df_sample, path=path_cols, values=values_col,
-                                title=f'Sunburst Chart: {" > ".join(path_cols)}',
-                                color_discrete_sequence=colors if isinstance(colors, list) else None)
-            else:
-                st.warning("Please select at least one column for the path hierarchy.")
-                return
-                
-        elif chart_type == "treemap":
-            if len(path_cols) > 0:
-                fig = px.treemap(df_sample, path=path_cols, values=values_col,
-                               title=f'Treemap: {" > ".join(path_cols)}',
-                               color_discrete_sequence=colors if isinstance(colors, list) else None)
-            else:
-                st.warning("Please select at least one column for the path hierarchy.")
-                return
-                
-        elif chart_type == "scatter_3d":
-            fig = px.scatter_3d(df_sample, x=x_axis, y=y_axis, z=z_axis,
-                              color=color_col, size=size_col,
-                              title=f'3D Scatter: {x_axis} vs {y_axis} vs {z_axis}',
-                              color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "heatmap":
-            if len(heatmap_cols) > 1:
-                corr_matrix = df_sample[heatmap_cols].corr()
-                fig = px.imshow(corr_matrix, title="Correlation Heatmap",
-                              color_continuous_scale=colors[0] if isinstance(colors[0], str) else 'Viridis',
-                              aspect="auto")
-            else:
-                st.warning("Please select at least 2 columns for the heatmap.")
-                return
-                
-        elif chart_type == "correlation":
-            if len(numeric_cols) > 1:
-                corr_matrix = df_sample[numeric_cols].corr()
-                fig = px.imshow(corr_matrix, title="Full Correlation Matrix",
-                              color_continuous_scale=colors[0] if isinstance(colors[0], str) else 'Viridis',
-                              aspect="auto")
-            else:
-                st.warning("Need at least 2 numeric columns for correlation matrix.")
-                return
-                
-        elif chart_type == "distribution":
-            col1, col2 = st.columns(2)
-            
-            # Select column for distribution
-            dist_col = st.sidebar.selectbox("Select column:", numeric_cols, key='dist_col')
-            
-            with col1:
-                fig1 = px.histogram(df_sample, x=dist_col, marginal="box",
-                                  title=f'Distribution: {dist_col}',
-                                  color_discrete_sequence=[colors[0] if isinstance(colors[0], str) else colors[0]])
-                st.plotly_chart(fig1, use_container_width=True)
-            
-            with col2:
-                # Q-Q plot
-                from scipy.stats import probplot
-                qq_data = probplot(df_sample[dist_col].dropna(), dist="norm")
-                
-                fig2 = go.Figure()
-                fig2.add_trace(go.Scatter(x=qq_data[0][0], y=qq_data[0][1], 
-                                        mode='markers', name='Sample Quantiles',
-                                        marker=dict(color=colors[1] if isinstance(colors[1], str) else colors[1])))
-                fig2.add_trace(go.Scatter(x=qq_data[0][0], y=qq_data[1][1] + qq_data[1][0] * qq_data[0][0], 
-                                        mode='lines', name='Theoretical Line',
-                                        line=dict(color='red')))
-                fig2.update_layout(title=f'Q-Q Plot: {dist_col}', 
-                                 xaxis_title='Theoretical Quantiles',
-                                 yaxis_title='Sample Quantiles')
-                st.plotly_chart(fig2, use_container_width=True)
-            return
-            
-        elif chart_type == "pair_plot":
-            pair_cols = st.sidebar.multiselect("Select columns for pair plot:", numeric_cols, 
-                                              default=numeric_cols[:min(4, len(numeric_cols))], key='pair_cols')
-            
-            if len(pair_cols) > 1:
-                fig = px.scatter_matrix(df_sample, dimensions=pair_cols,
-                                      title="Pair Plot Matrix",
-                                      color_discrete_sequence=colors if isinstance(colors, list) else None)
-            else:
-                st.warning("Please select at least 2 columns for pair plot.")
-                return
-                
-        elif chart_type == "parallel":
-            if len(parallel_cols) > 1:
-                fig = px.parallel_coordinates(df_sample, dimensions=parallel_cols, color=color_col,
-                                            title="Parallel Coordinates Plot",
-                                            color_continuous_scale=colors[0] if isinstance(colors[0], str) else 'Viridis')
-            else:
-                st.warning("Please select at least 2 columns for parallel coordinates.")
-                return
-                
-        elif chart_type == "radar":
-            if len(radar_cols) >= 3:
-                if category_col and df_sample[category_col].nunique() <= 10:
-                    # Multi-category radar chart
-                    categories = df_sample[category_col].unique()[:5]
-                    
-                    fig = go.Figure()
-                    
-                    for i, category in enumerate(categories):
-                        category_data = df_sample[df_sample[category_col] == category][radar_cols].mean()
-                        
-                        color_idx = i % len(colors) if isinstance(colors, list) else i
-                        color = colors[color_idx] if isinstance(colors, list) else px.colors.qualitative.Plotly[i]
-                        
-                        fig.add_trace(go.Scatterpolar(
-                            r=category_data.values,
-                            theta=radar_cols,
-                            fill='toself',
-                            name=str(category),
-                            line_color=color
-                        ))
-                else:
-                    # Single radar chart with mean values
-                    mean_values = df_sample[radar_cols].mean()
-                    
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatterpolar(
-                        r=mean_values.values,
-                        theta=radar_cols,
-                        fill='toself',
-                        name='Mean Values',
-                        line_color=colors[0] if isinstance(colors, list) else 'blue'
-                    ))
-                
-                fig.update_layout(
-                    polar=dict(
-                        radialaxis=dict(visible=True, range=[0, max([df_sample[col].max() for col in radar_cols])])
-                    ),
-                    showlegend=True,
-                    title="Radar Chart"
-                )
-            else:
-                st.warning("Please select at least 3 columns for radar chart.")
-                return
-                
-        elif chart_type == "bubble":
-            fig = px.scatter(df_sample, x=x_axis, y=y_axis, size=size_col, color=color_col,
-                           title=f'Bubble Chart: {x_axis} vs {y_axis} (Size: {size_col})',
-                           color_discrete_sequence=colors if isinstance(colors, list) else None)
-            
-        elif chart_type == "density_heatmap":
-            fig = px.density_heatmap(df_sample, x=x_axis, y=y_axis,
-                                   title=f'Density Heatmap: {x_axis} vs {y_axis}',
-                                   color_continuous_scale=colors[0] if isinstance(colors[0], str) else 'Viridis')
-            
-        elif chart_type == "stats_summary":
-            if numeric_cols:
-                summary_stats = df_sample[numeric_cols].describe()
-                
-                st.subheader("Statistical Summary")
-                st.dataframe(summary_stats, use_container_width=True)
-                
-                # Additional statistics
-                additional_stats = pd.DataFrame({
-                    'skewness': df_sample[numeric_cols].skew(),
-                    'kurtosis': df_sample[numeric_cols].kurtosis(),
-                    'variance': df_sample[numeric_cols].var(),
-                    'coefficient_of_variation': (df_sample[numeric_cols].std() / df_sample[numeric_cols].mean()) * 100
-                })
-                
-                st.subheader("Advanced Statistics")
-                st.dataframe(additional_stats.T, use_container_width=True)
-                
-                # Missing values summary
-                missing_data = df_sample.isnull().sum()
-                missing_data = missing_data[missing_data > 0].sort_values(ascending=False)
-                
-                if not missing_data.empty:
-                    fig = px.bar(x=missing_data.index, y=missing_data.values,
-                               title="Missing Values by Column",
-                               color_discrete_sequence=[colors[0] if isinstance(colors[0], str) else colors[0]])
-                    fig.update_layout(xaxis_title="Columns", yaxis_title="Missing Count")
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.success("No missing values found in the dataset!")
-                
-                return
-            else:
-                st.warning("No numeric columns found for statistical summary.")
-                return
-        
-        # Display the chart
-        if 'fig' in locals():
-            fig.update_layout(height=600)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Chart insights
-            st.subheader("📝 Chart Insights")
-            
-            if chart_type == "scatter":
-                if color_col and x_axis in numeric_cols and y_axis in numeric_cols:
-                    corr = df_sample[x_axis].corr(df_sample[y_axis])
-                    st.write(f"**Correlation between {x_axis} and {y_axis}:** {corr:.3f}")
-                    
-            elif chart_type == "histogram":
-                mean_val = df_sample[x_axis].mean()
-                median_val = df_sample[x_axis].median()
-                std_val = df_sample[x_axis].std()
-                st.write(f"**Mean:** {mean_val:.3f} | **Median:** {median_val:.3f} | **Std Dev:** {std_val:.3f}")
-                
-            elif chart_type in ["box", "violin"]:
-                if x_axis:
-                    group_stats = df_sample.groupby(x_axis)[y_axis].agg(['mean', 'median', 'std']).round(3)
-                    st.dataframe(group_stats, use_container_width=True)
-                    
-            elif chart_type == "heatmap" and len(heatmap_cols) > 1:
-                # Find strongest correlations
-                corr_matrix = df_sample[heatmap_cols].corr()
-                strong_corr = []
-                for i in range(len(corr_matrix.columns)):
-                    for j in range(i+1, len(corr_matrix.columns)):
-                        corr_val = corr_matrix.iloc[i, j]
-                        if abs(corr_val) > 0.5:
-                            strong_corr.append({
-                                'Feature 1': corr_matrix.columns[i],
-                                'Feature 2': corr_matrix.columns[j],
-                                'Correlation': corr_val
-                            })
-                
-                if strong_corr:
-                    strong_corr_df = pd.DataFrame(strong_corr).sort_values('Correlation', key=abs, ascending=False)
-                    st.write("**Strong Correlations (|r| > 0.5):**")
-                    st.dataframe(strong_corr_df, use_container_width=True)
-            
-            # Download chart data
-            if chart_type not in ["stats_summary", "distribution"]:
-                chart_data = df_sample.copy()
-                csv_data = chart_data.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Chart Data",
-                    data=csv_data,
-                    file_name=f"{selected_chart.lower().replace(' ', '_')}_data.csv",
-                    mime="text/csv"
-                )
-                
-    except Exception as e:
-        st.error(f"Error creating {selected_chart}: {str(e)}")
-        st.info("Please check your column selections and try again.")
-
-def create_advanced_ml_models():
-    """Create comprehensive machine learning model library with single-threading"""
-    
-    classification_models = {
-        # Tree-based models
-        'Random Forest': {
-            'model': RandomForestClassifier(random_state=42, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [3, 5, 10, None],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4]
-            },
-            'category': 'Ensemble'
-        },
-        'Extra Trees': {
-            'model': ExtraTreesClassifier(random_state=42, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [3, 5, 10, None],
-                'min_samples_split': [2, 5, 10]
-            },
-            'category': 'Ensemble'
-        },
-        'Gradient Boosting': {
-            'model': GradientBoostingClassifier(random_state=42),
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 5, 7]
-            },
-            'category': 'Ensemble'
-        },
-        'XGBoost': {
-            'model': XGBClassifier(random_state=42, eval_metric='logloss', n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 5, 7],
-                'subsample': [0.8, 0.9, 1.0]
-            },
-            'category': 'Boosting'
-        },
-        'LightGBM': {
-            'model': LGBMClassifier(random_state=42, verbose=-1, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 5, 7],
-                'num_leaves': [31, 50, 100]
-            },
-            'category': 'Boosting'
-        },
-        'CatBoost': {
-            'model': CatBoostClassifier(random_state=42, silent=True, thread_count=1),  # 🔧 FIX: Added thread_count=1
-            'params': {
-                'iterations': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'depth': [3, 5, 7]
-            },
-            'category': 'Boosting'
-        },
-        
-        # Linear models
-        'Logistic Regression': {
-            'model': LogisticRegression(random_state=42, max_iter=1000, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'C': [0.1, 1, 10, 100],
-                'penalty': ['l1', 'l2', 'elasticnet'],
-                'solver': ['liblinear', 'saga']
-            },
-            'category': 'Linear'
-        },
-        'Linear SVM': {
-            'model': LinearSVC(random_state=42, max_iter=1000),
-            'params': {
-                'C': [0.1, 1, 10, 100],
-                'penalty': ['l1', 'l2']
-            },
-            'category': 'SVM'
-        },
-        'SVM (RBF)': {
-            'model': SVC(random_state=42, probability=True),
-            'params': {
-                'C': [0.1, 1, 10, 100],
-                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1],
-                'kernel': ['rbf', 'poly']
-            },
-            'category': 'SVM'
-        },
-        
-        # Instance-based
-        'K-Nearest Neighbors': {
-            'model': KNeighborsClassifier(n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_neighbors': [3, 5, 7, 9, 11],
-                'weights': ['uniform', 'distance'],
-                'metric': ['euclidean', 'manhattan', 'minkowski']
-            },
-            'category': 'Instance-based'
-        },
-        
-        # Naive Bayes
-        'Gaussian Naive Bayes': {
-            'model': GaussianNB(),
-            'params': {
-                'var_smoothing': [1e-9, 1e-8, 1e-7, 1e-6]
-            },
-            'category': 'Probabilistic'
-        },
-        
-        # Neural Networks
-        'Multi-layer Perceptron': {
-            'model': MLPClassifier(random_state=42, max_iter=500),
-            'params': {
-                'hidden_layer_sizes': [(50,), (100,), (50, 50), (100, 50)],
-                'activation': ['relu', 'tanh'],
-                'alpha': [0.0001, 0.001, 0.01],
-                'learning_rate': ['constant', 'adaptive']
-            },
-            'category': 'Neural Network'
-        },
-        
-        # Discriminant Analysis
-        'Linear Discriminant Analysis': {
-            'model': LinearDiscriminantAnalysis(),
-            'params': {
-                'solver': ['svd', 'lsqr', 'eigen'],
-                'shrinkage': [None, 'auto', 0.1, 0.5, 0.9]
-            },
-            'category': 'Discriminant'
-        },
-        'Quadratic Discriminant Analysis': {
-            'model': QuadraticDiscriminantAnalysis(),
-            'params': {
-                'reg_param': [0.0, 0.1, 0.5, 0.9]
-            },
-            'category': 'Discriminant'
-        }
-    }
-    
-    regression_models = {
-        # Tree-based models
-        'Random Forest': {
-            'model': RandomForestRegressor(random_state=42, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [3, 5, 10, None],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4]
-            },
-            'category': 'Ensemble'
-        },
-        'Extra Trees': {
-            'model': ExtraTreesRegressor(random_state=42, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [3, 5, 10, None],
-                'min_samples_split': [2, 5, 10]
-            },
-            'category': 'Ensemble'
-        },
-        'Gradient Boosting': {
-            'model': GradientBoostingRegressor(random_state=42),
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 5, 7]
-            },
-            'category': 'Ensemble'
-        },
-        'XGBoost': {
-            'model': XGBRegressor(random_state=42, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 5, 7],
-                'subsample': [0.8, 0.9, 1.0]
-            },
-            'category': 'Boosting'
-        },
-        'LightGBM': {
-            'model': LGBMRegressor(random_state=42, verbose=-1, n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 5, 7],
-                'num_leaves': [31, 50, 100]
-            },
-            'category': 'Boosting'
-        },
-        'CatBoost': {
-            'model': CatBoostRegressor(random_state=42, silent=True, thread_count=1),  # 🔧 FIX: Added thread_count=1
-            'params': {
-                'iterations': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'depth': [3, 5, 7]
-            },
-            'category': 'Boosting'
-        },
-        
-        # Linear models
-        'Linear Regression': {
-            'model': LinearRegression(n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'fit_intercept': [True, False],
-                'normalize': [True, False]
-            },
-            'category': 'Linear'
-        },
-        'Ridge Regression': {
-            'model': Ridge(random_state=42),
-            'params': {
-                'alpha': [0.1, 1, 10, 100, 1000],
-                'fit_intercept': [True, False]
-            },
-            'category': 'Linear'
-        },
-        'Lasso Regression': {
-            'model': Lasso(random_state=42),
-            'params': {
-                'alpha': [0.1, 1, 10, 100, 1000],
-                'fit_intercept': [True, False]
-            },
-            'category': 'Linear'
-        },
-        'Elastic Net': {
-            'model': ElasticNet(random_state=42),
-            'params': {
-                'alpha': [0.1, 1, 10, 100],
-                'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9]
-            },
-            'category': 'Linear'
-        },
-        
-        # SVM
-        'Linear SVR': {
-            'model': LinearSVR(random_state=42, max_iter=1000),
-            'params': {
-                'C': [0.1, 1, 10, 100],
-                'epsilon': [0.01, 0.1, 0.2]
-            },
-            'category': 'SVM'
-        },
-        'SVR (RBF)': {
-            'model': SVR(),
-            'params': {
-                'C': [0.1, 1, 10, 100],
-                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1],
-                'epsilon': [0.01, 0.1, 0.2],
-                'kernel': ['rbf', 'poly']
-            },
-            'category': 'SVM'
-        },
-        
-        # Instance-based
-        'K-Nearest Neighbors': {
-            'model': KNeighborsRegressor(n_jobs=1),  # 🔧 FIX: Added n_jobs=1
-            'params': {
-                'n_neighbors': [3, 5, 7, 9, 11],
-                'weights': ['uniform', 'distance'],
-                'metric': ['euclidean', 'manhattan', 'minkowski']
-            },
-            'category': 'Instance-based'
-        },
-        
-        # Neural Networks
-        'Multi-layer Perceptron': {
-            'model': MLPRegressor(random_state=42, max_iter=500),
-            'params': {
-                'hidden_layer_sizes': [(50,), (100,), (50, 50), (100, 50)],
-                'activation': ['relu', 'tanh'],
-                'alpha': [0.0001, 0.001, 0.01],
-                'learning_rate': ['constant', 'adaptive']
-            },
-            'category': 'Neural Network'
-        }
-    }
-    
-    return classification_models, regression_models
-
-def create_deep_learning_models(input_shape, task_type='classification', complexity='medium'):
-    """Create advanced deep learning models with different architectures"""
-    
-    models = {}
-    
-    # Simple Feed-Forward Neural Network
-    def create_ffnn(complexity_level):
-        model = Sequential()
-        model.add(Dense(input_shape[0], input_shape=input_shape))
-        
-        if complexity_level == 'simple':
-            model.add(Dense(64, activation='relu'))
-            model.add(Dropout(0.2))
-            model.add(Dense(32, activation='relu'))
-        elif complexity_level == 'medium':
-            model.add(Dense(128, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.3))
-            model.add(Dense(64, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.2))
-            model.add(Dense(32, activation='relu'))
-        else:  # complex
-            model.add(Dense(256, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.4))
-            model.add(Dense(128, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.3))
-            model.add(Dense(64, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.2))
-            model.add(Dense(32, activation='relu'))
-        
-        if task_type == 'classification':
-            model.add(Dense(1, activation='sigmoid'))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='binary_crossentropy',
-                         metrics=['accuracy'])
-        else:
-            model.add(Dense(1))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='mse',
-                         metrics=['mae'])
-        
-        return model
-    
-    # Convolutional Neural Network (1D)
-    def create_cnn1d(complexity_level):
-        model = Sequential()
-        model.add(tf.keras.layers.Reshape((input_shape[0], 1), input_shape=input_shape))
-        
-        if complexity_level == 'simple':
-            model.add(Conv1D(32, kernel_size=3, activation='relu'))
-            model.add(GlobalMaxPooling1D())
-            model.add(Dense(32, activation='relu'))
-        elif complexity_level == 'medium':
-            model.add(Conv1D(64, kernel_size=3, activation='relu'))
-            model.add(Conv1D(32, kernel_size=3, activation='relu'))
-            model.add(GlobalMaxPooling1D())
-            model.add(Dense(64, activation='relu'))
-            model.add(Dropout(0.2))
-            model.add(Dense(32, activation='relu'))
-        else:  # complex
-            model.add(Conv1D(128, kernel_size=5, activation='relu'))
-            model.add(Conv1D(64, kernel_size=3, activation='relu'))
-            model.add(Conv1D(32, kernel_size=3, activation='relu'))
-            model.add(GlobalMaxPooling1D())
-            model.add(Dense(128, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.3))
-            model.add(Dense(64, activation='relu'))
-            model.add(Dropout(0.2))
-        
-        if task_type == 'classification':
-            model.add(Dense(1, activation='sigmoid'))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='binary_crossentropy',
-                         metrics=['accuracy'])
-        else:
-            model.add(Dense(1))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='mse',
-                         metrics=['mae'])
-        
-        return model
-    
-    # LSTM Network
-    def create_lstm(complexity_level):
-        model = Sequential()
-        model.add(tf.keras.layers.Reshape((input_shape[0], 1), input_shape=input_shape))
-        
-        if complexity_level == 'simple':
-            model.add(LSTM(32, return_sequences=False))
-            model.add(Dense(16, activation='relu'))
-        elif complexity_level == 'medium':
-            model.add(LSTM(64, return_sequences=True))
-            model.add(LSTM(32, return_sequences=False))
-            model.add(Dense(32, activation='relu'))
-            model.add(Dropout(0.2))
-        else:  # complex
-            model.add(LSTM(128, return_sequences=True))
-            model.add(LSTM(64, return_sequences=True))
-            model.add(LSTM(32, return_sequences=False))
-            model.add(Dense(64, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.3))
-            model.add(Dense(32, activation='relu'))
-        
-        if task_type == 'classification':
-            model.add(Dense(1, activation='sigmoid'))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='binary_crossentropy',
-                         metrics=['accuracy'])
-        else:
-            model.add(Dense(1))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='mse',
-                         metrics=['mae'])
-        
-        return model
-    
-    # Bidirectional LSTM
-    def create_bidirectional_lstm(complexity_level):
-        model = Sequential()
-        model.add(tf.keras.layers.Reshape((input_shape[0], 1), input_shape=input_shape))
-        
-        if complexity_level == 'simple':
-            model.add(Bidirectional(LSTM(32)))
-            model.add(Dense(16, activation='relu'))
-        elif complexity_level == 'medium':
-            model.add(Bidirectional(LSTM(64, return_sequences=True)))
-            model.add(Bidirectional(LSTM(32)))
-            model.add(Dense(32, activation='relu'))
-            model.add(Dropout(0.2))
-        else:  # complex
-            model.add(Bidirectional(LSTM(128, return_sequences=True)))
-            model.add(Bidirectional(LSTM(64, return_sequences=True)))
-            model.add(Bidirectional(LSTM(32)))
-            model.add(Dense(64, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.3))
-        
-        if task_type == 'classification':
-            model.add(Dense(1, activation='sigmoid'))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='binary_crossentropy',
-                         metrics=['accuracy'])
-        else:
-            model.add(Dense(1))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='mse',
-                         metrics=['mae'])
-        
-        return model
-    
-    # GRU Network
-    def create_gru(complexity_level):
-        model = Sequential()
-        model.add(tf.keras.layers.Reshape((input_shape[0], 1), input_shape=input_shape))
-        
-        if complexity_level == 'simple':
-            model.add(GRU(32))
-            model.add(Dense(16, activation='relu'))
-        elif complexity_level == 'medium':
-            model.add(GRU(64, return_sequences=True))
-            model.add(GRU(32))
-            model.add(Dense(32, activation='relu'))
-            model.add(Dropout(0.2))
-        else:  # complex
-            model.add(GRU(128, return_sequences=True))
-            model.add(GRU(64, return_sequences=True))
-            model.add(GRU(32))
-            model.add(Dense(64, activation='relu'))
-            model.add(BatchNormalization())
-            model.add(Dropout(0.3))
-        
-        if task_type == 'classification':
-            model.add(Dense(1, activation='sigmoid'))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='binary_crossentropy',
-                         metrics=['accuracy'])
-        else:
-            model.add(Dense(1))
-            model.compile(optimizer=Adam(learning_rate=0.001),
-                         loss='mse',
-                         metrics=['mae'])
-        
-        return model
-    
-    # Create models based on complexity
-    models[f'FFNN_{complexity}'] = create_ffnn(complexity)
-    models[f'CNN1D_{complexity}'] = create_cnn1d(complexity)
-    models[f'LSTM_{complexity}'] = create_lstm(complexity)
-    models[f'BiLSTM_{complexity}'] = create_bidirectional_lstm(complexity)
-    models[f'GRU_{complexity}'] = create_gru(complexity)
-    
-    return models
-
-def intelligent_model_recommendation_system(X_train, y_train, X_test, y_test, task_type='classification'):
-    """Advanced model recommendation system with comprehensive evaluation"""
-    
-    st.markdown('<h2 class="sub-header">🤖 Intelligent Model Recommendation System</h2>', unsafe_allow_html=True)
-    
-    # Get model libraries
-    if task_type == 'classification':
-        ml_models, _ = create_advanced_ml_models()
-        scoring_metric = 'accuracy'
-    else:
-        _, ml_models = create_advanced_ml_models()
-        scoring_metric = 'neg_mean_squared_error'
-    
-    # Model evaluation results
-    model_results = []
-    
-    # Progress bar
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    total_models = len(ml_models)
-    
-    st.subheader("🔄 Machine Learning Model Evaluation")
-    
-    # Evaluate ML models
-    successful_models = 0
-    
-    for idx, (model_name, model_config) in enumerate(ml_models.items()):
-        status_text.text(f'Evaluating {model_name}...')
-        progress_bar.progress((idx + 1) / total_models)
-        
-        try:
-            start_time = time.time()
-            
-            # Get the model instance
-            model = model_config['model']
-            
-            # 🔧 FIX: Ensure single-threading
-            if hasattr(model, 'n_jobs'):
-                model.set_params(n_jobs=1)
-            if hasattr(model, 'thread_count'):  # For CatBoost
-                model.set_params(thread_count=1)
-            
-            # 🔧 FIX: Use simple train-test split instead of cross-validation to avoid multiprocessing
-            from sklearn.model_selection import train_test_split
-            X_tr, X_val, y_tr, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
-            
-            # Fit model
-            model.fit(X_tr, y_tr)
-            
-            if task_type == 'classification':
-                y_pred = model.predict(X_test)
-                y_pred_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
-                
-                # Calculate validation score (simpler than cross-validation)
-                val_score = accuracy_score(y_val, model.predict(X_val))
-                
-                accuracy = accuracy_score(y_test, y_pred)
-                precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-                recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-                f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-                roc_auc = roc_auc_score(y_test, y_pred_proba) if y_pred_proba is not None else None
-                
-                model_results.append({
-                    'Model': model_name,
-                    'Category': model_config['category'],
-                    'CV_Mean': val_score,  # Use validation score instead of CV
-                    'CV_Std': 0.0,  # Not available with simple validation
-                    'Accuracy': accuracy,
-                    'Precision': precision,
-                    'Recall': recall,
-                    'F1_Score': f1,
-                    'ROC_AUC': roc_auc,
-                    'Training_Time': time.time() - start_time,
-                    'Task_Type': 'Classification'
-                })
-                
-            else:  # regression
-                y_pred = model.predict(X_test)
-                
-                # Calculate validation score
-                val_score = r2_score(y_val, model.predict(X_val))
-                
-                mse = mean_squared_error(y_test, y_pred)
-                rmse = np.sqrt(mse)
-                mae = mean_absolute_error(y_test, y_pred)
-                r2 = r2_score(y_test, y_pred)
-                
-                model_results.append({
-                    'Model': model_name,
-                    'Category': model_config['category'],
-                    'CV_Mean': val_score,  # Use validation score
-                    'CV_Std': 0.0,
-                    'MSE': mse,
-                    'RMSE': rmse,
-                    'MAE': mae,
-                    'R2_Score': r2,
-                    'Training_Time': time.time() - start_time,
-                    'Task_Type': 'Regression'
-                })
-            
-            successful_models += 1
-            st.success(f"✅ {model_name} evaluated successfully!")
-                
-        except Exception as e:
-            st.warning(f"Error evaluating {model_name}: {str(e)}")
-            continue
-    
-    # Clear progress indicators
-    progress_bar.empty()
-    status_text.empty()
-    
-    if successful_models == 0:
-        st.error("❌ No models could be evaluated successfully. Please check your data and try again.")
-        return None, None
-    
-    # Convert results to DataFrame
-    results_df = pd.DataFrame(model_results)
-    
-    # Display results
-    st.subheader("📊 Model Performance Comparison")
-    
-    if task_type == 'classification':
-        # Sort by accuracy for classification
-        results_df = results_df.sort_values('Accuracy', ascending=False)
-        
-        # Display top performers
-        st.dataframe(results_df[['Model', 'Category', 'Accuracy', 'Precision', 'Recall', 'F1_Score', 'ROC_AUC', 'Training_Time']].round(4), 
-                    use_container_width=True)
-        
-        # Best model identification
-        best_model = results_df.iloc[0]
-        
-        st.markdown(f"""
-        <div class="success-box">
-            <h3>🏆 Best Model: {best_model['Model']}</h3>
-            <p><strong>Category:</strong> {best_model['Category']}</p>
-            <p><strong>Accuracy:</strong> {best_model['Accuracy']:.4f}</p>
-            <p><strong>F1 Score:</strong> {best_model['F1_Score']:.4f}</p>
-            <p><strong>ROC AUC:</strong> {best_model['ROC_AUC']:.4f if best_model['ROC_AUC'] else 'N/A'}</p>
-            <p><strong>Training Time:</strong> {best_model['Training_Time']:.2f} seconds</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Performance visualization
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig = px.bar(results_df.head(10), x='Accuracy', y='Model', 
-                        title='Top 10 Models by Accuracy',
-                        color='Category',
-                        orientation='h')
-            fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            fig = px.scatter(results_df, x='Training_Time', y='Accuracy', 
-                           color='Category', size='F1_Score',
-                           title='Accuracy vs Training Time',
-                           hover_data=['Model'])
-            fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    else:  # regression
-        # Sort by R2 score for regression
-        results_df = results_df.sort_values('R2_Score', ascending=False)
-        
-        # Display top performers
-        st.dataframe(results_df[['Model', 'Category', 'R2_Score', 'RMSE', 'MAE', 'Training_Time']].round(4), 
-                    use_container_width=True)
-        
-        # Best model identification
-        best_model = results_df.iloc[0]
-        
-        st.markdown(f"""
-        <div class="success-box">
-            <h3>🏆 Best Model: {best_model['Model']}</h3>
-            <p><strong>Category:</strong> {best_model['Category']}</p>
-            <p><strong>R² Score:</strong> {best_model['R2_Score']:.4f}</p>
-            <p><strong>RMSE:</strong> {best_model['RMSE']:.4f}</p>
-            <p><strong>MAE:</strong> {best_model['MAE']:.4f}</p>
-            <p><strong>Training Time:</strong> {best_model['Training_Time']:.2f} seconds</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Performance visualization
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig = px.bar(results_df.head(10), x='R2_Score', y='Model', 
-                        title='Top 10 Models by R² Score',
-                        color='Category',
-                        orientation='h')
-            fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            fig = px.scatter(results_df, x='Training_Time', y='R2_Score', 
-                           color='Category', size='MAE',
-                           title='R² Score vs Training Time',
-                           hover_data=['Model'])
-            fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Deep Learning Model Evaluation
-    if st.checkbox("🧠 Include Deep Learning Models", value=False):
-        st.subheader("🔄 Deep Learning Model Evaluation")
-        
-        # Create deep learning models
-        input_shape = (X_train.shape[1],)
-        complexities = ['simple', 'medium', 'complex']
-        
-        dl_results = []
-        
-        for complexity in complexities:
-            dl_models = create_deep_learning_models(input_shape, task_type, complexity)
-            
-            for model_name, model in dl_models.items():
-                status_text.text(f'Evaluating {model_name}...')
-                
-                try:
-                    start_time = time.time()
-                    
-                    # Train deep learning model
-                    callbacks = [
-                        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
-                        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.001)
-                    ]
-                    
-                    history = model.fit(X_train, y_train, 
-                                      epochs=50, 
-                                      batch_size=32,
-                                      validation_split=0.2,
-                                      callbacks=callbacks,
-                                      verbose=0)
-                    
-                    # Evaluate model
-                    if task_type == 'classification':
-                        y_pred_proba = model.predict(X_test)
-                        y_pred = (y_pred_proba > 0.5).astype(int).ravel()
-                        
-                        accuracy = accuracy_score(y_test, y_pred)
-                        precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-                        recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-                        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-                        roc_auc = roc_auc_score(y_test, y_pred_proba)
-                        
-                        dl_results.append({
-                            'Model': model_name,
-                            'Category': 'Deep Learning',
-                            'Accuracy': accuracy,
-                            'Precision': precision,
-                            'Recall': recall,
-                            'F1_Score': f1,
-                            'ROC_AUC': roc_auc,
-                            'Training_Time': time.time() - start_time,
-                            'Final_Loss': history.history['loss'][-1],
-                            'Final_Val_Loss': history.history['val_loss'][-1],
-                            'Task_Type': 'Classification'
-                        })
-                        
-                    else:  # regression
-                        y_pred = model.predict(X_test).ravel()
-                        
-                        mse = mean_squared_error(y_test, y_pred)
-                        rmse = np.sqrt(mse)
-                        mae = mean_absolute_error(y_test, y_pred)
-                        r2 = r2_score(y_test, y_pred)
-                        
-                        dl_results.append({
-                            'Model': model_name,
-                            'Category': 'Deep Learning',
-                            'MSE': mse,
-                            'RMSE': rmse,
-                            'MAE': mae,
-                            'R2_Score': r2,
-                            'Training_Time': time.time() - start_time,
-                            'Final_Loss': history.history['loss'][-1],
-                            'Final_Val_Loss': history.history['val_loss'][-1],
-                            'Task_Type': 'Regression'
-                        })
-                        
-                except Exception as e:
-                    st.warning(f"Error evaluating {model_name}: {str(e)}")
-                    continue
-        
-        # Add deep learning results to main results
-        if dl_results:
-            dl_results_df = pd.DataFrame(dl_results)
-            
-            if task_type == 'classification':
-                combined_results = pd.concat([results_df, dl_results_df], ignore_index=True)
-                combined_results = combined_results.sort_values('Accuracy', ascending=False)
-            else:
-                combined_results = pd.concat([results_df, dl_results_df], ignore_index=True)
-                combined_results = combined_results.sort_values('R2_Score', ascending=False)
-            
-            st.subheader("🤖 Combined ML + DL Performance")
-            
-            if task_type == 'classification':
-                st.dataframe(combined_results[['Model', 'Category', 'Accuracy', 'F1_Score', 'ROC_AUC', 'Training_Time']].round(4), 
-                           use_container_width=True)
-                
-                # Update best model if DL performs better
-                new_best = combined_results.iloc[0]
-                if new_best['Category'] == 'Deep Learning':
-                    st.markdown(f"""
-                    <div class="success-box">
-                        <h3>🧠 New Best Model (Deep Learning): {new_best['Model']}</h3>
-                        <p><strong>Accuracy:</strong> {new_best['Accuracy']:.4f}</p>
-                        <p><strong>F1 Score:</strong> {new_best['F1_Score']:.4f}</p>
-                        <p><strong>ROC AUC:</strong> {new_best['ROC_AUC']:.4f}</p>
-                        <p><strong>Training Time:</strong> {new_best['Training_Time']:.2f} seconds</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.dataframe(combined_results[['Model', 'Category', 'R2_Score', 'RMSE', 'MAE', 'Training_Time']].round(4), 
-                           use_container_width=True)
-                
-                new_best = combined_results.iloc[0]
-                if new_best['Category'] == 'Deep Learning':
-                    st.markdown(f"""
-                    <div class="success-box">
-                        <h3>🧠 New Best Model (Deep Learning): {new_best['Model']}</h3>
-                        <p><strong>R² Score:</strong> {new_best['R2_Score']:.4f}</p>
-                        <p><strong>RMSE:</strong> {new_best['RMSE']:.4f}</p>
-                        <p><strong>MAE:</strong> {new_best['MAE']:.4f}</p>
-                        <p><strong>Training Time:</strong> {new_best['Training_Time']:.2f} seconds</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            results_df = combined_results
-    
-    # Model interpretability and recommendations
-    st.subheader("🔍 Model Analysis and Recommendations")
-    
-    # Category-wise performance analysis
-    category_performance = results_df.groupby('Category').agg({
-        'Accuracy' if task_type == 'classification' else 'R2_Score': ['mean', 'std'],
-        'Training_Time': ['mean', 'std']
-    }).round(4)
-    
-    st.write("📊 **Category-wise Performance Summary:**")
-    st.dataframe(category_performance, use_container_width=True)
-    
-    # Recommendations based on different criteria
-    st.subheader("💡 Smart Recommendations")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if task_type == 'classification':
-            best_accuracy = results_df.loc[results_df['Accuracy'].idxmax()]
-        else:
-            best_accuracy = results_df.loc[results_df['R2_Score'].idxmax()]
-        
-        st.markdown(f"""
-        <div class="metric-card">
-            <h4>🎯 Best Performance</h4>
-            <p><strong>{best_accuracy['Model']}</strong></p>
-            <p>{best_accuracy['Category']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        fastest_model = results_df.loc[results_df['Training_Time'].idxmin()]
-        st.markdown(f"""
-        <div class="metric-card">
-            <h4>⚡ Fastest Training</h4>
-            <p><strong>{fastest_model['Model']}</strong></p>
-            <p>{fastest_model['Training_Time']:.2f} seconds</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        # Balanced recommendation (performance vs speed)
-        if task_type == 'classification':
-            results_df['efficiency_score'] = (results_df['Accuracy'] / results_df['Training_Time']) * 100
-            best_balanced = results_df.loc[results_df['efficiency_score'].idxmax()]
-        else:
-            results_df['efficiency_score'] = (results_df['R2_Score'] / results_df['Training_Time']) * 100
-            best_balanced = results_df.loc[results_df['efficiency_score'].idxmax()]
-        
-        st.markdown(f"""
-        <div class="metric-card">
-            <h4>⚖️ Best Balanced</h4>
-            <p><strong>{best_balanced['Model']}</strong></p>
-            <p>Efficiency: {best_balanced['efficiency_score']:.2f}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    return results_df, best_model
-
-def create_model_deployment_code(best_model_name, features, target, task_type):
-    """Generate deployment-ready code for the best model"""
-    
-    st.subheader("📦 Model Deployment Code Generator")
-    
-    deployment_code = f"""
-# Model Deployment Code - {best_model_name}
-# Generated by Advanced AutoML Dashboard
-
-import pandas as pd
-import numpy as np
-import pickle
-from sklearn.preprocessing import StandardScaler
-
-class ModelDeployment:
-    def __init__(self):
-        self.model = None
-        self.scaler = None
-        self.feature_names = {features}
-        self.target_name = '{target}'
-        self.task_type = '{task_type}'
-        
-    def load_model(self, model_path, scaler_path=None):
-        '''Load the trained model and scaler'''
-        with open(model_path, 'rb') as f:
-            self.model = pickle.load(f)
-        
-        if scaler_path:
-            with open(scaler_path, 'rb') as f:
-                self.scaler = pickle.load(f)
-        
-        print("Model loaded successfully!")
-        
-    def preprocess_input(self, input_data):
-        '''Preprocess input data for prediction'''
-        if isinstance(input_data, dict):
-            input_data = pd.DataFrame([input_data])
-        
-        # Ensure all required features are present
-        missing_features = set(self.feature_names) - set(input_data.columns)
-        if missing_features:
-            raise ValueError(f"Missing features: {{missing_features}}")
-        
-        # Select and order features
-        input_data = input_data[self.feature_names]
-        
-        # Scale features if scaler is available
-        if self.scaler:
-            input_data = self.scaler.transform(input_data)
-        
-        return input_data
-    
-    def predict(self, input_data):
-        '''Make predictions on new data'''
-        if self.model is None:
-            raise ValueError("Model not loaded. Call load_model() first.")
-        
-        processed_data = self.preprocess_input(input_data)
-        
-        if self.task_type == 'classification':
-            predictions = self.model.predict(processed_data)
-            probabilities = None
-            
-            if hasattr(self.model, 'predict_proba'):
-                probabilities = self.model.predict_proba(processed_data)
-            
-            return {{
-                'predictions': predictions.tolist(),
-                'probabilities': probabilities.tolist() if probabilities is not None else None
-            }}
-        else:
-            predictions = self.model.predict(processed_data)
-            return {{
-                'predictions': predictions.tolist()
-            }}
-    
-    def batch_predict(self, csv_file_path, output_path):
-        '''Perform batch predictions on a CSV file'''
-        data = pd.read_csv(csv_file_path)
-        results = self.predict(data)
-        
-        # Add predictions to original data
-        data['predictions'] = results['predictions']
-        if results.get('probabilities'):
-            data['probabilities'] = results['probabilities']
-        
-        data.to_csv(output_path, index=False)
-        print(f"Batch predictions saved to {{output_path}}")
-
-# Example usage:
-if __name__ == "__main__":
-    # Initialize deployment
-    deployment = ModelDeployment()
-    
-    # Load your trained model
-    # deployment.load_model('model.pkl', 'scaler.pkl')
-    
-    # Make prediction on new data
-    sample_input = {{
-        # Add sample feature values here
-        {", ".join([f"'{feature}': 0.0" for feature in features[:5]])}
-    }}
-    
-    # result = deployment.predict(sample_input)
-    # print("Prediction:", result)
-    
-    # For batch predictions:
-    # deployment.batch_predict('new_data.csv', 'predictions.csv')
-"""
-    
-    st.code(deployment_code, language='python')
-    
-    # Download button for the code
-    st.download_button(
-        label="📥 Download Deployment Code",
-        data=deployment_code,
-        file_name=f"{best_model_name.lower().replace(' ', '_')}_deployment.py",
-        mime="text/plain"
-    )
-
 def main():
     """Main application function"""
     
-    st.markdown('<h1 class="main-header">🚀 Advanced AutoML & Visualization Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🧠 Expert AutoML & Deep Learning Platform</h1>', unsafe_allow_html=True)
     
     st.markdown("""
     <div style="text-align: center; margin-bottom: 2rem;">
         <p style="font-size: 1.2rem; color: #666;">
-            Complete Data Science Pipeline: From Raw Data to Production-Ready Models
+            Enterprise-grade Machine Learning & Deep Learning Platform with Advanced Model Training, 
+            Interpretability, and Production Deployment
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -1772,15 +2119,29 @@ def main():
         st.session_state.best_model = None
     if 'original_data' not in st.session_state:
         st.session_state.original_data = None
+    if 'trainer' not in st.session_state:
+        st.session_state.trainer = ExpertModelTrainer()
+    if 'evaluator' not in st.session_state:
+        st.session_state.evaluator = AdvancedModelEvaluation()
+    if 'deployment' not in st.session_state:
+        st.session_state.deployment = ModelDeployment()
+    if 'visualizer' not in st.session_state:
+        st.session_state.visualizer = AdvancedDataVisualization()
+    if 'analytics' not in st.session_state:
+        st.session_state.analytics = AdvancedAnalytics()
+    if 'evaluation_results' not in st.session_state:
+        st.session_state.evaluation_results = {}
+    if 'dl_evaluation_results' not in st.session_state:
+        st.session_state.dl_evaluation_results = {}
     
     # Sidebar configuration
-    st.sidebar.header('⚙️ Configuration')
+    st.sidebar.header('⚙️ Expert Configuration')
     
     # File upload
     uploaded_file = st.file_uploader(
         "📂 Upload your dataset (CSV, XLSX, XLS)", 
         type=['csv', 'xlsx', 'xls'],
-        help="Upload your dataset to begin the analysis"
+        help="Upload your dataset to begin expert-level analysis"
     )
     
     if uploaded_file is not None:
@@ -1827,24 +2188,23 @@ def main():
                 with st.expander("👀 View Cleaned Data Sample", expanded=True):
                     st.dataframe(st.session_state.processed_data.head(100), use_container_width=True)
             
-            # Application mode selection - Use cleaned data if available, otherwise use original
+            # Application mode selection
             current_data = st.session_state.processed_data if st.session_state.processed_data is not None else df
             
-            st.sidebar.subheader('🎯 Application Mode')
+            st.sidebar.subheader('🎯 Expert Analysis Mode')
             app_mode = st.sidebar.radio(
                 "Choose your analysis type:",
-                ["📊 Data Visualization", "🤖 Model Recommendation", "🔍 Advanced Analytics"]
+                ["📊 Data Visualization", "🤖 Expert Model Training", "🔍 Advanced Analytics", "🚀 Model Deployment"]
             )
             
             if app_mode == "📊 Data Visualization":
-                # Check dataset size for visualization
-                if len(current_data) > 100000:
-                    st.warning("⚠️ Large dataset detected. Visualization will use a sample for performance.")
-                
-                create_advanced_visualizations(current_data)
+                st.session_state.visualizer.create_advanced_dashboard(current_data)
             
-            elif app_mode == "🤖 Model Recommendation":
-                st.markdown('<h2 class="sub-header">🎯 Machine Learning Model Selection</h2>', unsafe_allow_html=True)
+            elif app_mode == "🔍 Advanced Analytics":
+                st.session_state.analytics.perform_comprehensive_analysis(current_data)
+            
+            elif app_mode == "🤖 Expert Model Training":
+                st.markdown('<h2 class="sub-header">🎯 Expert Machine Learning & Deep Learning</h2>', unsafe_allow_html=True)
                 
                 # Feature and target selection
                 all_columns = current_data.columns.tolist()
@@ -1875,27 +2235,42 @@ def main():
                 selected_features = st.multiselect(
                     "🔧 Select feature columns:",
                     available_features,
-                    default=available_features[:min(20, len(available_features))]  # Limit default selection
+                    default=available_features[:min(20, len(available_features))]
+                )
+                
+                # Model selection mode
+                st.subheader("🤖 Model Selection Strategy")
+                model_selection_mode = st.radio(
+                    "Choose model selection approach:",
+                    ["🚀 Auto Recommendation (Evaluate & Select Best Models)", "👨‍💻 Manual Selection (Choose Specific Models)"],
+                    horizontal=True
                 )
                 
                 # Advanced options
-                with st.expander("⚙️ Advanced Model Options", expanded=False):
-                    col1, col2 = st.columns(2)
+                with st.expander("⚙️ Expert Training Options", expanded=False):
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
                         test_size = st.slider("Test set size", 0.1, 0.4, 0.2)
+                        validation_size = st.slider("Validation size", 0.1, 0.3, 0.1)
                         random_state = st.number_input("Random state", value=42)
                     
                     with col2:
                         scale_features = st.checkbox("Scale features", value=True)
                         feature_selection = st.checkbox("Apply feature selection", value=False)
+                        advanced_preprocessing = st.checkbox("Advanced preprocessing", value=True)
+                    
+                    with col3:
+                        train_ml = st.checkbox("Train ML Models", value=True)
+                        train_dl = st.checkbox("Train DL Models", value=False)
+                        epochs = st.number_input("DL Epochs", min_value=10, max_value=500, value=100) if train_dl else 100
                 
                 # Model training and evaluation
-                if st.button("🚀 Start Model Training & Evaluation", type="primary"):
+                if st.button("🚀 Start Expert Model Training", type="primary"):
                     if len(selected_features) == 0:
                         st.error("❌ Please select at least one feature column.")
                     else:
-                        with st.spinner('🔄 Training and evaluating models...'):
+                        with st.spinner('🔄 Training expert models...'):
                             # Prepare data
                             X = current_data[selected_features]
                             y = current_data[target_column]
@@ -1908,6 +2283,7 @@ def main():
                                 y = y[valid_indices]
                             
                             # Feature scaling
+                            scaler = None
                             if scale_features:
                                 scaler = StandardScaler()
                                 X = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
@@ -1915,9 +2291,9 @@ def main():
                             # Feature selection
                             if feature_selection:
                                 if task_type == 'classification':
-                                    selector = SelectKBest(f_classif, k=min(10, X.shape[1]))
+                                    selector = SelectKBest(f_classif, k=min(15, X.shape[1]))
                                 else:
-                                    selector = SelectKBest(f_regression, k=min(10, X.shape[1]))
+                                    selector = SelectKBest(f_regression, k=min(15, X.shape[1]))
                                 
                                 X = pd.DataFrame(selector.fit_transform(X, y), 
                                                columns=X.columns[selector.get_support()], 
@@ -1925,458 +2301,311 @@ def main():
                                 
                                 st.info(f"🔍 Selected {X.shape[1]} most important features")
                             
-                            # Train-test split
-                            X_train, X_test, y_train, y_test = train_test_split(
-                                X, y, test_size=test_size, random_state=random_state, 
+                            # Train-validation-test split
+                            X_temp, X_test, y_temp, y_test = train_test_split(
+                                X, y, test_size=test_size, random_state=random_state,
                                 stratify=y if task_type == 'classification' and len(y.unique()) > 1 else None
                             )
                             
-                            st.info(f"📊 Training set: {X_train.shape[0]} samples, Test set: {X_test.shape[0]} samples")
-                            
-                            # Model evaluation
-                            st.session_state.model_results, st.session_state.best_model = intelligent_model_recommendation_system(
-                                X_train, y_train, X_test, y_test, task_type
+                            X_train, X_val, y_train, y_val = train_test_split(
+                                X_temp, y_temp, test_size=validation_size, random_state=random_state,
+                                stratify=y_temp if task_type == 'classification' and len(y_temp.unique()) > 1 else None
                             )
                             
-                            # Generate deployment code
-                            if st.session_state.best_model is not None:
-                                create_model_deployment_code(
-                                    st.session_state.best_model['Model'], 
-                                    selected_features, 
-                                    target_column, 
-                                    task_type
-                                )
-            
-            elif app_mode == "🔍 Advanced Analytics":
-                st.markdown('<h2 class="sub-header">🔬 Advanced Analytics Suite</h2>', unsafe_allow_html=True)
-                
-                analytics_options = st.multiselect(
-                    "Select advanced analytics to perform:",
-                    [
-                        "Principal Component Analysis (PCA)",
-                        "Clustering Analysis", 
-                        "Feature Importance Analysis",
-                        "Statistical Testing",
-                        "Anomaly Detection",
-                        "Time Series Decomposition"
-                    ]
-                )
-                
-                numeric_columns = current_data.select_dtypes(include=[np.number]).columns.tolist()
-                
-                if "Principal Component Analysis (PCA)" in analytics_options:
-                    st.subheader("🔍 Principal Component Analysis")
-                    
-                    if len(numeric_columns) >= 2:
-                        n_components = st.slider("Number of components:", 2, min(10, len(numeric_columns)), 3)
-                        
-                        # Perform PCA
-                        scaler = StandardScaler()
-                        scaled_data = scaler.fit_transform(current_data[numeric_columns])
-                        
-                        pca = PCA(n_components=n_components)
-                        pca_result = pca.fit_transform(scaled_data)
-                        
-                        # Create PCA DataFrame
-                        pca_df = pd.DataFrame(
-                            data=pca_result,
-                            columns=[f'PC{i+1}' for i in range(n_components)]
-                        )
-                        
-                        # Explained variance
-                        explained_var = pca.explained_variance_ratio_
-                        cumulative_var = np.cumsum(explained_var)
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            # Explained variance plot
-                            fig = px.bar(x=range(1, n_components+1), y=explained_var,
-                                       title="Explained Variance by Component",
-                                       labels={'x': 'Principal Component', 'y': 'Explained Variance Ratio'})
-                            st.plotly_chart(fig, use_container_width=True)
-                        
-                        with col2:
-                            # Cumulative explained variance
-                            fig = px.line(x=range(1, n_components+1), y=cumulative_var,
-                                        title="Cumulative Explained Variance",
-                                        labels={'x': 'Number of Components', 'y': 'Cumulative Variance'})
-                            fig.add_hline(y=0.95, line_dash="dash", line_color="red", 
-                                        annotation_text="95% Variance")
-                            st.plotly_chart(fig, use_container_width=True)
-                        
-                        # 2D PCA visualization
-                        if n_components >= 2:
-                            fig = px.scatter(pca_df, x='PC1', y='PC2', 
-                                           title="PCA: First Two Components")
-                            st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Component loadings
-                        loadings = pd.DataFrame(
-                            pca.components_.T,
-                            columns=[f'PC{i+1}' for i in range(n_components)],
-                            index=numeric_columns
-                        )
-                        
-                        st.subheader("Component Loadings")
-                        st.dataframe(loadings.round(3), use_container_width=True)
-                    
-                    else:
-                        st.warning("❌ Need at least 2 numeric columns for PCA")
-                
-                if "Clustering Analysis" in analytics_options:
-                    st.subheader("🎯 Clustering Analysis")
-                    
-                    if len(numeric_columns) >= 2:
-                        clustering_method = st.selectbox("Select clustering method:", 
-                                                       ["K-Means", "DBSCAN", "Agglomerative"])
-                        
-                        # Prepare data
-                        scaler = StandardScaler()
-                        scaled_data = scaler.fit_transform(current_data[numeric_columns])
-                        
-                        if clustering_method == "K-Means":
-                            n_clusters = st.slider("Number of clusters:", 2, 10, 3)
+                            st.info(f"📊 Training set: {X_train.shape[0]} samples, "
+                                  f"Validation set: {X_val.shape[0]} samples, "
+                                  f"Test set: {X_test.shape[0]} samples")
                             
-                            kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-                            cluster_labels = kmeans.fit_predict(scaled_data)
+                            # Train models based on selection mode
+                            all_results = {}
                             
-                            # Add clusters to data
-                            plot_data = current_data[numeric_columns].copy()
-                            plot_data['Cluster'] = cluster_labels
+                            if model_selection_mode == "🚀 Auto Recommendation (Evaluate & Select Best Models)":
+                                st.subheader("🔍 Auto Model Evaluation & Selection")
+                                
+                                # Quick evaluate ML models
+                                if train_ml:
+                                    st.info("⚡ Quick evaluating ML models to select the best performers...")
+                                    ml_evaluation_results = st.session_state.trainer.quick_evaluate_models(
+                                        X_train, y_train, X_test, y_test, task_type
+                                    )
+                                    st.session_state.evaluation_results = ml_evaluation_results
+                                    
+                                    if ml_evaluation_results:
+                                        # Select best ML models
+                                        ml_pipeline = ExpertMLPipeline()
+                                        best_ml_models = ml_pipeline.get_best_models_auto(ml_evaluation_results, task_type)
+                                        
+                                        st.success(f"🎯 Auto-selected ML Models: {', '.join(best_ml_models.keys())}")
+                                        
+                                        # Train the best ML models with full data
+                                        ml_results = st.session_state.trainer.train_selected_ml_models(
+                                            X_train, y_train, X_test, y_test, 
+                                            list(best_ml_models.keys()), task_type
+                                        )
+                                        all_results.update(ml_results)
+                                
+                                # Quick evaluate DL models
+                                if train_dl:
+                                    st.info("⚡ Quick evaluating DL models to select the best performers...")
+                                    dl_evaluation_results = st.session_state.trainer.quick_evaluate_dl_models(
+                                        X_train, y_train, X_val, y_val, X_test, y_test, 
+                                        task_type, epochs=20
+                                    )
+                                    st.session_state.dl_evaluation_results = dl_evaluation_results
+                                    
+                                    if dl_evaluation_results:
+                                        # Select best DL models
+                                        dl_models = AdvancedDeepLearningModels()
+                                        best_dl_models = dl_models.get_best_dl_models_auto(dl_evaluation_results, task_type)
+                                        
+                                        st.success(f"🎯 Auto-selected DL Models: {', '.join(best_dl_models.keys())}")
+                                        
+                                        # Train the best DL models with full data
+                                        dl_results = st.session_state.trainer.train_selected_dl_models(
+                                            X_train, y_train, X_val, y_val, X_test, y_test, 
+                                            list(best_dl_models.keys()), task_type, epochs
+                                        )
+                                        all_results.update(dl_results)
                             
-                            # Visualize clusters
-                            if len(numeric_columns) >= 2:
-                                fig = px.scatter(plot_data, x=numeric_columns[0], y=numeric_columns[1], 
-                                               color='Cluster', title=f"K-Means Clustering (k={n_clusters})")
-                                st.plotly_chart(fig, use_container_width=True)
+                            else:  # Manual selection
+                                st.subheader("👨‍💻 Manual Model Selection")
+                                
+                                ml_pipeline = ExpertMLPipeline()
+                                dl_models = AdvancedDeepLearningModels()
+                                
+                                if train_ml:
+                                    # Get all available ML models
+                                    all_ml_models = ml_pipeline.get_all_models(task_type)
+                                    ml_models_to_train = st.multiselect(
+                                        "Select ML Models to train:",
+                                        list(all_ml_models.keys()),
+                                        default=["Random Forest", "XGBoost", "LightGBM"]
+                                    )
+                                    
+                                    if ml_models_to_train:
+                                        ml_results = st.session_state.trainer.train_selected_ml_models(
+                                            X_train, y_train, X_test, y_test, 
+                                            ml_models_to_train, task_type
+                                        )
+                                        all_results.update(ml_results)
+                                
+                                if train_dl:
+                                    input_shape = (X_train.shape[1],)
+                                    all_dl_models = dl_models.get_all_dl_models(input_shape, task_type)
+                                    dl_models_to_train = st.multiselect(
+                                        "Select Deep Learning Models to train:",
+                                        list(all_dl_models.keys()),
+                                        default=["Simple Neural Network", "Residual MLP"]
+                                    )
+                                    
+                                    if dl_models_to_train:
+                                        dl_results = st.session_state.trainer.train_selected_dl_models(
+                                            X_train, y_train, X_val, y_val, X_test, y_test, 
+                                            dl_models_to_train, task_type, epochs
+                                        )
+                                        all_results.update(dl_results)
                             
-                            # Cluster summary
-                            cluster_summary = plot_data.groupby('Cluster')[numeric_columns].mean()
-                            st.subheader("Cluster Centers")
-                            st.dataframe(cluster_summary.round(3), use_container_width=True)
-                        
-                        elif clustering_method == "DBSCAN":
-                            eps = st.slider("Epsilon (neighborhood distance):", 0.1, 2.0, 0.5)
-                            min_samples = st.slider("Minimum samples:", 2, 20, 5)
-                            
-                            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
-                            cluster_labels = dbscan.fit_predict(scaled_data)
-                            
-                            # Add clusters to data
-                            plot_data = current_data[numeric_columns].copy()
-                            plot_data['Cluster'] = cluster_labels
-                            
-                            n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
-                            n_noise = list(cluster_labels).count(-1)
-                            
-                            st.info(f"🎯 Found {n_clusters} clusters and {n_noise} noise points")
-                            
-                            # Visualize clusters
-                            if len(numeric_columns) >= 2:
-                                fig = px.scatter(plot_data, x=numeric_columns[0], y=numeric_columns[1], 
-                                               color='Cluster', title="DBSCAN Clustering")
-                                st.plotly_chart(fig, use_container_width=True)
-                    
-                    else:
-                        st.warning("❌ Need at least 2 numeric columns for clustering")
-                
-                if "Feature Importance Analysis" in analytics_options:
-                    st.subheader("🔬 Feature Importance Analysis")
-                    
-                    if len(numeric_columns) > 1:
-                        target_for_importance = st.selectbox("Select target for importance:", numeric_columns)
-                        
-                        X = current_data[numeric_columns].drop(columns=[target_for_importance])
-                        y = current_data[target_for_importance]
-                        
-                        # Random Forest for feature importance
-                        rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=1)
-                        rf.fit(X, y)
-                        
-                        importance_df = pd.DataFrame({
-                            'Feature': X.columns,
-                            'Importance': rf.feature_importances_
-                        }).sort_values('Importance', ascending=False)
-                        
-                        # Feature importance plot
-                        fig = px.bar(importance_df.head(15), x='Importance', y='Feature',
-                                   title="Feature Importance (Random Forest)",
-                                   orientation='h')
-                        fig.update_layout(height=500)
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Correlation with target
-                        correlations = X.corrwith(y).abs().sort_values(ascending=False)
-                        corr_df = pd.DataFrame({
-                            'Feature': correlations.index,
-                            'Correlation': correlations.values
-                        })
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.subheader("Top Feature Importances")
-                            st.dataframe(importance_df.head(10), use_container_width=True)
-                        
-                        with col2:
-                            st.subheader("Top Correlations with Target")
-                            st.dataframe(corr_df.head(10), use_container_width=True)
-                    
-                    else:
-                        st.warning("❌ Need at least 2 numeric columns for feature importance analysis")
-                
-                if "Statistical Testing" in analytics_options:
-                    st.subheader("📊 Statistical Testing Suite")
-                    
-                    if len(numeric_columns) >= 2:
-                        test_type = st.selectbox("Select statistical test:", 
-                                               ["Correlation Test", "T-Test", "ANOVA", "Chi-Square Test"])
-                        
-                        if test_type == "Correlation Test":
-                            col1_test = st.selectbox("Select first variable:", numeric_columns, key="corr_var1")
-                            col2_test = st.selectbox("Select second variable:", numeric_columns, key="corr_var2")
-                            
-                            if col1_test != col2_test:
-                                # Pearson correlation
-                                pearson_corr, pearson_p = stats.pearsonr(
-                                    current_data[col1_test].dropna(),
-                                    current_data[col2_test].dropna()
+                            if all_results:
+                                st.session_state.model_results = all_results
+                                
+                                # Comprehensive evaluation
+                                metrics_df = st.session_state.evaluator.comprehensive_model_evaluation(
+                                    all_results, X_test, y_test, task_type
                                 )
                                 
-                                # Spearman correlation
-                                spearman_corr, spearman_p = stats.spearmanr(
-                                    current_data[col1_test].dropna(),
-                                    current_data[col2_test].dropna()
-                                )
+                                # Find best model
+                                if task_type == 'classification':
+                                    best_model_name = max(all_results.keys(), 
+                                                       key=lambda x: all_results[x]['accuracy'])
+                                else:
+                                    best_model_name = max(all_results.keys(), 
+                                                       key=lambda x: all_results[x]['r2_score'])
                                 
-                                col1, col2 = st.columns(2)
+                                best_model = all_results[best_model_name]['model']
+                                st.session_state.best_model = best_model
+                                st.session_state.best_model_name = best_model_name
+                                st.session_state.feature_names = selected_features
+                                st.session_state.target_name = target_column
+                                st.session_state.task_type = task_type
+                                st.session_state.scaler = scaler
                                 
-                                with col1:
-                                    st.metric("Pearson Correlation", f"{pearson_corr:.4f}")
-                                    st.metric("P-value", f"{pearson_p:.4f}")
-                                    st.write("✅ Significant" if pearson_p < 0.05 else "❌ Not Significant")
-                                
-                                with col2:
-                                    st.metric("Spearman Correlation", f"{spearman_corr:.4f}")
-                                    st.metric("P-value", f"{spearman_p:.4f}")
-                                    st.write("✅ Significant" if spearman_p < 0.05 else "❌ Not Significant")
-                                
-                                # Scatter plot with regression line
-                                fig = px.scatter(current_data, 
-                                               x=col1_test, y=col2_test,
-                                               trendline="ols",
-                                               title=f"Correlation: {col1_test} vs {col2_test}")
-                                st.plotly_chart(fig, use_container_width=True)
-                        
-                        elif test_type == "T-Test":
-                            test_var = st.selectbox("Select test variable:", numeric_columns, key="ttest_var")
-                            group_var = st.selectbox("Select grouping variable:", 
-                                                    current_data.columns.tolist(), 
-                                                    key="ttest_group")
-                            
-                            unique_groups = current_data[group_var].unique()
-                            if len(unique_groups) == 2:
-                                group1_data = current_data[
-                                    current_data[group_var] == unique_groups[0]
-                                ][test_var].dropna()
-                                group2_data = current_data[
-                                    current_data[group_var] == unique_groups[1]
-                                ][test_var].dropna()
-                                
-                                # Independent t-test
-                                t_stat, p_value = stats.ttest_ind(group1_data, group2_data)
-                                
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    st.metric("T-Statistic", f"{t_stat:.4f}")
-                                with col2:
-                                    st.metric("P-Value", f"{p_value:.4f}")
-                                with col3:
-                                    st.write("✅ Significant Difference" if p_value < 0.05 else "❌ No Significant Difference")
-                                
-                                # Box plot comparison
-                                fig = px.box(current_data, x=group_var, y=test_var,
-                                           title=f"T-Test: {test_var} by {group_var}")
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.markdown(f"""
+                                <div class="success-box">
+                                    <h3>🏆 Best Model: {best_model_name}</h3>
+                                    <p><strong>Model Type:</strong> {type(best_model).__name__}</p>
+                                    {f"<p><strong>Accuracy:</strong> {all_results[best_model_name]['accuracy']:.4f}</p>" if task_type == 'classification' else f"<p><strong>R² Score:</strong> {all_results[best_model_name]['r2_score']:.4f}</p>"}
+                                    <p><strong>Training Time:</strong> {all_results[best_model_name]['training_time']:.2f} seconds</p>
+                                </div>
+                                """, unsafe_allow_html=True)
                             
                             else:
-                                st.warning("❌ T-test requires exactly 2 groups. Selected variable has " + str(len(unique_groups)) + " groups.")
+                                st.error("❌ No models were successfully trained.")
+            
+            elif app_mode == "🚀 Model Deployment":
+                st.markdown('<h2 class="sub-header">🚀 Production Model Deployment</h2>', unsafe_allow_html=True)
                 
-                if "Anomaly Detection" in analytics_options:
-                    st.subheader("🚨 Anomaly Detection")
+                if st.session_state.best_model is not None:
+                    # Deployment options
+                    col1, col2 = st.columns(2)
                     
-                    if len(numeric_columns) >= 1:
-                        from sklearn.ensemble import IsolationForest
-                        from sklearn.neighbors import LocalOutlierFactor
+                    with col1:
+                        st.subheader("📦 Deployment Artifacts")
                         
-                        detection_method = st.selectbox("Select anomaly detection method:", 
-                                                      ["Isolation Forest", "Local Outlier Factor", "Statistical (Z-Score)"])
+                        if st.button("💾 Save Deployment Artifacts"):
+                            artifacts = st.session_state.deployment.save_deployment_artifacts(
+                                st.session_state.best_model,
+                                st.session_state.feature_names,
+                                st.session_state.scaler,
+                                None,  # encoder
+                                st.session_state.best_model_name
+                            )
+                            
+                            if artifacts:
+                                st.success("✅ Deployment artifacts saved successfully!")
+                                
+                                # ADDED: Direct model download
+                                st.subheader("📥 Download Model")
+                                with open(artifacts['model'], 'rb') as f:
+                                    model_bytes = f.read()
+                                
+                                st.download_button(
+                                    label="💾 Download Model as PKL",
+                                    data=model_bytes,
+                                    file_name=f"{st.session_state.best_model_name}.pkl",
+                                    mime="application/octet-stream"
+                                )
+                    
+                    with col2:
+                        st.subheader("🔧 Deployment Code")
                         
-                        # Prepare data
-                        anomaly_data = current_data[numeric_columns].copy()
+                        # Generate deployment code
+                        deployment_code = st.session_state.deployment.create_production_pipeline(
+                            st.session_state.best_model,
+                            st.session_state.feature_names,
+                            st.session_state.target_name,
+                            st.session_state.task_type,
+                            st.session_state.scaler
+                        )
                         
-                        if detection_method == "Isolation Forest":
-                            contamination = st.slider("Contamination rate:", 0.01, 0.5, 0.1)
-                            
-                            iso_forest = IsolationForest(contamination=contamination, random_state=42)
-                            anomaly_labels = iso_forest.fit_predict(anomaly_data)
-                            
-                            anomaly_data['Anomaly'] = anomaly_labels
-                            anomaly_data['Anomaly'] = anomaly_data['Anomaly'].map({1: 'Normal', -1: 'Anomaly'})
-                            
-                            n_anomalies = (anomaly_labels == -1).sum()
-                            st.info(f"🚨 Detected {n_anomalies} anomalies ({n_anomalies/len(anomaly_data)*100:.2f}%)")
-                            
-                        elif detection_method == "Local Outlier Factor":
-                            n_neighbors = st.slider("Number of neighbors:", 5, 50, 20)
-                            
-                            lof = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=0.1)
-                            anomaly_labels = lof.fit_predict(anomaly_data)
-                            
-                            anomaly_data['Anomaly'] = anomaly_labels
-                            anomaly_data['Anomaly'] = anomaly_data['Anomaly'].map({1: 'Normal', -1: 'Anomaly'})
-                            
-                            n_anomalies = (anomaly_labels == -1).sum()
-                            st.info(f"🚨 Detected {n_anomalies} anomalies ({n_anomalies/len(anomaly_data)*100:.2f}%)")
+                        st.code(deployment_code, language='python')
                         
-                        elif detection_method == "Statistical (Z-Score)":
-                            z_threshold = st.slider("Z-Score threshold:", 2.0, 4.0, 3.0)
+                        # Download deployment code
+                        st.download_button(
+                            label="📥 Download Deployment Code",
+                            data=deployment_code,
+                            file_name=f"{st.session_state.best_model_name}_deployment.py",
+                            mime="text/plain"
+                        )
+                    
+                    # Model interpretability
+                    st.subheader("🔍 Model Interpretability")
+                    
+                    if st.button("📊 Generate Model Explanations"):
+                        with st.spinner('Generating model explanations...'):
+                            # Prepare interpretability data
+                            X_interpret = current_data[st.session_state.feature_names]
+                            y_interpret = current_data[st.session_state.target_name]
                             
-                            # Calculate Z-scores for each numeric column
-                            z_scores = np.abs(stats.zscore(anomaly_data))
-                            anomaly_mask = (z_scores > z_threshold).any(axis=1)
+                            interpretability = ModelInterpretability()
                             
-                            anomaly_data['Anomaly'] = anomaly_mask.map({True: 'Anomaly', False: 'Normal'})
+                            importance_df = interpretability.calculate_feature_importance(
+                                st.session_state.best_model,
+                                X_interpret.values,
+                                y_interpret.values,
+                                np.array(st.session_state.feature_names)
+                            )
                             
-                            n_anomalies = anomaly_mask.sum()
-                            st.info(f"🚨 Detected {n_anomalies} anomalies ({n_anomalies/len(anomaly_data)*100:.2f}%)")
-                        
-                        # Visualize anomalies
-                        if len(numeric_columns) >= 2:
-                            fig = px.scatter(anomaly_data, x=numeric_columns[0], y=numeric_columns[1], 
-                                           color='Anomaly', 
-                                           title=f"Anomaly Detection: {detection_method}",
-                                           color_discrete_map={'Normal': 'blue', 'Anomaly': 'red'})
+                            # Plot feature importance
+                            fig = px.bar(
+                                importance_df.head(15),
+                                x='importance_mean' if 'importance_mean' in importance_df.columns else 'importance',
+                                y='feature',
+                                orientation='h',
+                                title=f"Feature Importance - {st.session_state.best_model_name}",
+                                labels={'importance_mean': 'Importance', 'feature': 'Feature'}
+                            )
+                            
                             st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Show anomaly summary
-                        anomaly_summary = anomaly_data.groupby('Anomaly')[numeric_columns].describe()
-                        st.subheader("Anomaly Summary Statistics")
-                        st.dataframe(anomaly_summary, use_container_width=True)
+                            
+                            # Show feature importance table
+                            st.dataframe(importance_df, use_container_width=True)
+                    
+                    # ADDED: Deployment Guide
+                    st.session_state.deployment.get_deployment_guide(
+                        st.session_state.task_type,
+                        type(st.session_state.best_model).__name__
+                    )
+                
+                else:
+                    st.warning("⚠️ Please train models first in the 'Expert Model Training' section.")
         
         except Exception as e:
             st.error(f"❌ Error processing file: {str(e)}")
-            st.info("Please ensure your file is properly formatted and try again.")
+            import traceback
+            st.error(f"Detailed error: {traceback.format_exc()}")
     
     else:
         # Landing page content
         st.markdown("""
-        ## 🌟 Features
+        ## 🌟 Expert-Level Features
+        
+        ### 🤖 **Advanced Machine Learning**
+        - **Auto Model Evaluation & Selection** - Evaluates all models and selects best performers
+        - **Manual Model Selection** - Full control over model choices
+        - **Quick Model Evaluation** - Fast performance assessment before full training
+        - **Optimized Hyperparameter Tuning**
+        
+        ### 🧠 **Deep Learning Architectures**
+        - **Transformer Models** for tabular data
+        - **Residual MLP Networks** with skip connections
+        - **Hybrid CNN-LSTM Models** for sequential patterns
+        - **Simple Neural Networks** for quick prototyping
         
         ### 📊 **Advanced Data Visualization**
-        - 20+ interactive chart types including 3D visualizations
-        - Real-time data profiling and statistical analysis
-        - Correlation analysis and distribution testing
-        - Time series analysis and seasonal decomposition
+        - **Interactive Chart Builder** with full customization
+        - **Multiple Chart Types** (Scatter, Line, Bar, Histogram, Box, Violin, Heatmap, Pie, Area)
+        - **Color Coding** and advanced styling options
+        - **Quick Visualization Suggestions** for instant insights
         
-        ### 🤖 **Intelligent Model Recommendation**
-        - 25+ machine learning algorithms with hyperparameter tuning
-        - Deep learning models with different architectures
-        - Automated model selection based on performance metrics
-        - Cross-validation and statistical evaluation
-        
-        ### 🔬 **Advanced Analytics Suite**
-        - Principal Component Analysis (PCA)
-        - Clustering analysis (K-Means, DBSCAN, Agglomerative)
-        - Feature importance and selection
-        - Statistical testing (T-tests, ANOVA, Correlation)
-        - Anomaly detection with multiple methods
-        
-        ### 🚀 **Production Ready**
-        - Automated code generation for model deployment
-        - Batch prediction capabilities
-        - Model serialization and loading
-        - Performance monitoring and evaluation
+        ### 🔍 **Advanced Analytics**
+        - **Customizable Analysis** - Choose which analyses to perform
+        - **Statistical Analysis** with comprehensive insights
+        - **Correlation Analysis** with heatmaps
+        - **Distribution Analysis** with normality tests
+        - **Outlier Detection** and analysis
         
         ---
         
-        ## 🎯 **Supported File Formats**
-        - CSV files with automatic encoding detection
-        - Excel files (XLSX, XLS)
-        - Large datasets up to 100,000 rows
+        ## 🎯 **Auto Model Selection Process**
         
-        ## 🔧 **Advanced Preprocessing**
-        - Intelligent missing value handling
-        - Outlier detection and removal
-        - Automatic feature encoding (Label, One-hot)
-        - Feature scaling and normalization
-        - Feature selection and dimensionality reduction
+        **1. Quick Evaluation Phase ⚡**
+        - All models are quickly evaluated on a subset of data
+        - Performance metrics are calculated for each model
+        - Best performing models are automatically selected
         
-        ---
+        **2. Full Training Phase 🚀**
+        - Only the best models are trained with full data
+        - Saves time and computational resources
+        - Ensures optimal model performance
         
-        ### 📈 **Model Categories Supported**
-        
-        **🌳 Tree-based Models**
-        - Random Forest, Extra Trees
-        - Gradient Boosting, XGBoost
-        - LightGBM, CatBoost
-        
-        **🔢 Linear Models**  
-        - Logistic/Linear Regression
-        - Ridge, Lasso, Elastic Net
-        - Support Vector Machines
-        
-        **🧠 Neural Networks**
-        - Multi-layer Perceptron
-        - Convolutional Neural Networks (1D)
-        - LSTM, GRU, Bidirectional RNNs
-        
-        **📊 Other Algorithms**
-        - K-Nearest Neighbors
-        - Naive Bayes variants
-        - Discriminant Analysis
-        - Gaussian Processes
+        **3. Comprehensive Evaluation 📊**
+        - Detailed performance comparison
+        - Model interpretability and feature importance
+        - Production-ready deployment code
         
         ---
         
         ## 🚀 **Get Started**
-        Upload your dataset using the file uploader above and let our AI-powered system automatically:
         
-        1. **🔍 Analyze** your data structure and quality
-        2. **🧹 Clean** and preprocess your dataset intelligently  
-        3. **📊 Visualize** patterns and relationships
-        4. **🤖 Recommend** the best machine learning models
-        5. **📦 Generate** production-ready deployment code
+        Upload your dataset to access these expert-level features:
         
-        **Ready to transform your data into insights? Upload your file now! 📂✨**
+        1. **📊 Data Visualization** - Interactive charts and insights
+        2. **🔍 Advanced Analytics** - Customizable statistical analysis
+        3. **🤖 Model Training** - Auto evaluation & selection or manual model training
+        4. **🚀 Deployment** - Production-ready model deployment with comprehensive guides
+        
+        **Ready to build enterprise-grade AI solutions? Upload your data now! 📂✨**
         """)
-        
-        # Add some example datasets info
-        with st.expander("💡 Example Use Cases", expanded=False):
-            st.markdown("""
-            ### 🏢 **Business Applications**
-            - **Sales Forecasting**: Predict future sales based on historical data
-            - **Customer Churn**: Identify customers likely to leave
-            - **Fraud Detection**: Detect anomalous transactions
-            - **Price Optimization**: Optimize pricing strategies
-            
-            ### 🏥 **Healthcare & Science**  
-            - **Medical Diagnosis**: Classify diseases based on symptoms
-            - **Drug Discovery**: Predict molecular properties
-            - **Clinical Trials**: Analyze treatment effectiveness
-            
-            ### 💰 **Finance**
-            - **Credit Scoring**: Assess loan default risk
-            - **Algorithmic Trading**: Predict stock movements
-            - **Risk Management**: Quantify financial risks
-            
-            ### 🏭 **Manufacturing & IoT**
-            - **Predictive Maintenance**: Predict equipment failures
-            - **Quality Control**: Detect defective products
-            - **Supply Chain**: Optimize inventory management
-            """)
 
 if __name__ == "__main__":
     main()
